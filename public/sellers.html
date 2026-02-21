@@ -129,9 +129,9 @@
         <button class="tf-btn" onclick="setTimeframe(0,  'Today')">Today</button>
         <button class="tf-btn" onclick="setTimeframe(7,  'Last 7 days')">7d</button>
         <button class="tf-btn" onclick="setTimeframe(14, 'Last 14 days')">14d</button>
-        <button class="tf-btn" onclick="setTimeframe(30, 'Last 30 days')">30d</button>
+        <button class="tf-btn active" onclick="setTimeframe(30, 'Last 30 days')">30d</button>
         <button class="tf-btn" onclick="setTimeframe(60, 'Last 60 days')">60d</button>
-        <button class="tf-btn active" onclick="setTimeframe(90, 'Last 90 days')">90d</button>
+        <button class="tf-btn" onclick="setTimeframe(89, 'Last 89 days')">89d</button>
       </div>
       <button class="sync-btn" id="syncBtn" onclick="loadSellers()">↻ Refresh</button>
     </div>
@@ -162,7 +162,7 @@
     <div class="empty">
       <div class="empty-icon">🏪</div>
       <h3>No data yet</h3>
-      <p>Click "Load Sellers" to fetch your last 90 days of orders</p>
+      <p>Click "Load Sellers" to fetch your last 89 days of orders</p>
     </div>
   </div>
 </div>
@@ -170,13 +170,14 @@
 <script>
 let sellersData = [];
 let maxSpent = 0;
-let currentDays = 90;
-let currentLabel = 'Last 90 days';
+let currentDays = 30;
+let currentLabel = 'Last 30 days';
+let ordersCache = {}; // key = days, value = { orders, fetchedAt }
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function setTimeframe(days, label) {
   currentDays = days;
   currentLabel = label;
-  // Update active button
   document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
   loadSellers();
@@ -189,82 +190,42 @@ function showAlert(type, msg) {
   if (type !== 'error') setTimeout(() => { el.style.display = 'none'; }, 4000);
 }
 
-async function loadSellers() {
+async function loadSellers(forceRefresh = false) {
   const btn = document.getElementById('syncBtn');
+  const container = document.getElementById('sellersContainer');
+
+  // Use cache if available and fresh
+  const cached = ordersCache[currentDays];
+  if (!forceRefresh && cached && (Date.now() - cached.fetchedAt < CACHE_TTL)) {
+    processOrders(cached.orders, cached.savedStatuses);
+    showAlert('info', `Showing cached data · click ↻ Refresh to update`);
+    return;
+  }
+
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Loading…';
-
-  const container = document.getElementById('sellersContainer');
   container.innerHTML = '<div class="loading-overlay"><div class="big-spinner"></div><p>Fetching orders…</p></div>';
 
   try {
     const to = new Date();
     const from = new Date();
     if (currentDays === 0) {
-      // Today only
       from.setHours(0, 0, 0, 0);
     } else {
       from.setDate(from.getDate() - currentDays);
     }
 
-    const res = await fetch(`/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`);
+    const [res, sr] = await Promise.all([
+      fetch(`/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`),
+      fetch('/api/tracking-statuses').catch(() => ({ json: () => ({}) }))
+    ]);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
+    const savedStatuses = await sr.json().catch(() => ({}));
 
-    // Also load saved tracking statuses
-    let savedStatuses = {};
-    try {
-      const sr = await fetch('/api/tracking-statuses');
-      savedStatuses = await sr.json();
-    } catch {}
-
-    // Group by seller
-    const sellerMap = {};
-    for (const o of data.orders) {
-      const seller = o.seller || o.items?.[0]?.seller || 'Unknown';
-      if (!sellerMap[seller]) {
-        sellerMap[seller] = { name: seller, orders: [], totalSpent: 0, orderCount: 0, lastDate: null, firstDate: null };
-      }
-      const s = sellerMap[seller];
-      const trackingNumber = o.tracking?.[0]?.trackingNumber || '';
-      const savedStatus = savedStatuses[trackingNumber]?.status || null;
-      s.orders.push({
-        orderId: o.extendedOrderId || o.orderId,
-        item: o.items?.map(i => i.title).join(' + ') || '—',
-        price: o.totalAmount || 0,
-        currency: o.currency || 'USD',
-        date: o.createdDate,
-        status: savedStatus || o.deliveryStatus || 'pending',
-        quantity: o.totalQuantity || o.items?.reduce((s,i) => s + (i.quantity||1), 0) || 1,
-      });
-      s.totalSpent += o.totalAmount || 0;
-      s.orderCount++;
-      s.totalQty = (s.totalQty || 0) + (o.totalQuantity || 1);
-      const d = new Date(o.createdDate);
-      if (!s.lastDate || d > new Date(s.lastDate)) s.lastDate = o.createdDate;
-      if (!s.firstDate || d < new Date(s.firstDate)) s.firstDate = o.createdDate;
-    }
-
-    sellersData = Object.values(sellerMap);
-    maxSpent = Math.max(...sellersData.map(s => s.totalSpent), 1);
-
-    // Update stats
-    const totalSpent = sellersData.reduce((s, x) => s + x.totalSpent, 0);
-    const totalOrders = sellersData.reduce((s, x) => s + x.orderCount, 0);
-    const totalQty = sellersData.reduce((s, x) => s + (x.totalQty || 0), 0);
-    document.getElementById('statSellers').textContent = sellersData.length;
-    document.getElementById('statOrders').textContent = totalOrders;
-    document.getElementById('statQty').textContent = totalQty;
-    document.getElementById('statSpent').textContent = '$' + totalSpent.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-    document.getElementById('statAvg').textContent = '$' + (totalSpent / (sellersData.length || 1)).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-    const topSeller = [...sellersData].sort((a,b) => b.totalSpent - a.totalSpent)[0];
-    document.getElementById('statTop').textContent = topSeller?.name || '—';
-
-    // Update date label
-    const fmt = d => new Date(d).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
-    document.getElementById('dateRangeLabel').textContent = `${currentLabel}: ${fmt(from)} – ${fmt(to)} · ${data.orders.length} orders from ${sellersData.length} sellers`;
-
-    renderSellers();
+    // Cache the result
+    ordersCache[currentDays] = { orders: data.orders, savedStatuses, fetchedAt: Date.now() };
+    processOrders(data.orders, savedStatuses);
     showAlert('success', `✓ Loaded ${data.orders.length} orders from ${sellersData.length} sellers`);
   } catch(err) {
     showAlert('error', `✗ ${err.message}`);
@@ -273,6 +234,69 @@ async function loadSellers() {
     btn.disabled = false;
     btn.textContent = '↻ Refresh';
   }
+}
+
+function processOrders(orders, savedStatuses) {
+  const to = new Date();
+  const from = new Date();
+  if (currentDays === 0) { from.setHours(0,0,0,0); } else { from.setDate(from.getDate() - currentDays); }
+
+  // Group by seller
+  const sellerMap = {};
+  for (const o of orders) {
+    const seller = o.seller || o.items?.[0]?.seller || 'Unknown';
+    if (!sellerMap[seller]) {
+      sellerMap[seller] = { name: seller, orders: [], totalSpent: 0, orderCount: 0, totalQty: 0, lastDate: null, firstDate: null };
+    }
+    const s = sellerMap[seller];
+    // Check all tracking numbers for a saved USPS-verified status
+    const allTracking = o.tracking || [];
+    let savedStatus = null;
+    for (const t of allTracking) {
+      const tn = t.trackingNumber || '';
+      if (tn && savedStatuses[tn]?.status) {
+        savedStatus = savedStatuses[tn].status;
+        break;
+      }
+    }
+    // If no USPS-verified status, use eBay's status but map it properly
+    const ebayStatus = o.deliveryStatus || 'pending';
+    const status = savedStatus || ebayStatus;
+    s.orders.push({
+      orderId: o.extendedOrderId || o.orderId,
+      item: o.items?.map(i => i.title).join(' + ') || '—',
+      price: o.totalAmount || 0,
+      currency: o.currency || 'USD',
+      date: o.createdDate,
+      status,
+      quantity: o.totalQuantity || o.items?.reduce((sum,i) => sum + (i.quantity||1), 0) || 1,
+    });
+    s.totalSpent += o.totalAmount || 0;
+    s.orderCount++;
+    s.totalQty += (o.totalQuantity || 1);
+    const d = new Date(o.createdDate);
+    if (!s.lastDate || d > new Date(s.lastDate)) s.lastDate = o.createdDate;
+    if (!s.firstDate || d < new Date(s.firstDate)) s.firstDate = o.createdDate;
+  }
+
+  sellersData = Object.values(sellerMap);
+  maxSpent = Math.max(...sellersData.map(s => s.totalSpent), 1);
+
+  const totalSpent  = sellersData.reduce((s, x) => s + x.totalSpent, 0);
+  const totalOrders = sellersData.reduce((s, x) => s + x.orderCount, 0);
+  const totalQty    = sellersData.reduce((s, x) => s + x.totalQty, 0);
+  document.getElementById('statSellers').textContent = sellersData.length;
+  document.getElementById('statOrders').textContent  = totalOrders;
+  document.getElementById('statQty').textContent     = totalQty;
+  document.getElementById('statSpent').textContent   = '$' + totalSpent.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('statAvg').textContent     = '$' + (totalSpent / (sellersData.length || 1)).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const topSeller = [...sellersData].sort((a,b) => b.totalSpent - a.totalSpent)[0];
+  document.getElementById('statTop').textContent = topSeller?.name || '—';
+
+  const fmt = d => new Date(d).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  document.getElementById('dateRangeLabel').textContent = `${currentLabel}: ${fmt(from)} – ${fmt(to)} · ${orders.length} orders from ${sellersData.length} sellers`;
+
+  renderSellers();
 }
 
 function getAvatarColor(name) {

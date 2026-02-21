@@ -227,7 +227,7 @@
       <option value="7">Last 7 Days</option>
       <option value="14">Last 14 Days</option>
       <option value="30">Last 30 Days</option>
-      <option value="90">Last 90 Days</option>
+      <option value="89">Last 89 Days</option>
     </select>
     <button class="btn-primary" id="syncBtn" onclick="fetchOrders()">↻ Sync eBay</button>
   </div>
@@ -420,7 +420,7 @@ function renderCal() {
     }
     for (let d = 1; d <= daysInMonth; d++) {
       const thisDate = new Date(calViewYear, calViewMonth, d);
-      const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 90);
+      const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 89);
       const isFuture = thisDate > today;
       const isTooOld = thisDate < ninetyDaysAgo;
       const isToday  = thisDate.toDateString() === todayStr;
@@ -519,10 +519,10 @@ function applyCalFilter() {
   const lo = calRangeEnd ? new Date(Math.min(+calRangeStart,+calRangeEnd)) : calRangeStart;
   const hi = calRangeEnd ? new Date(Math.max(+calRangeStart,+calRangeEnd)) : calRangeStart;
 
-  // eBay API limit: no orders older than 90 days
-  const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 90);
+  // eBay API limit: no orders older than 89 days
+  const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 89);
   if (lo < ninetyDaysAgo) {
-    showAlert('error', '⚠ eBay only allows fetching orders from the last 90 days. Please select a more recent date range.');
+    showAlert('error', '⚠ eBay only allows fetching orders from the last 89 days. Please select a more recent date range.');
     return;
   }
   calFilterDate = { from: lo, to: hi };
