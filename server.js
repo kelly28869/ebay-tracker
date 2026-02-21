@@ -38,7 +38,6 @@ const {
   EBAY_USER_TOKEN,
   USPS_CLIENT_ID,
   USPS_CLIENT_SECRET,
-  AFTERSHIP_API_KEY,
   DASHBOARD_USERNAME = 'admin',
   DASHBOARD_PASSWORD,
   PORT = 3000
@@ -467,82 +466,63 @@ function parseOrder(order) {
   };
 }
 
-// ── AfterShip carrier slug mapping ───────────────────────────────────────────
-function getAfterShipSlug(carrier) {
-  const c = (carrier || '').toLowerCase();
-  if (c.includes('usps') || c.includes('postal')) return 'usps';
-  if (c.includes('ups'))    return 'ups';
-  if (c.includes('fedex'))  return 'fedex';
-  if (c.includes('dhl'))    return 'dhl-us';
-  if (c.includes('amazon')) return 'amazon';
-  return null; // let AfterShip auto-detect
+// ── USPS OAuth token cache ────────────────────────────────────────────────────
+let uspsToken = null, uspsTokenExpiry = 0;
+
+async function getUspsToken() {
+  if (uspsToken && Date.now() < uspsTokenExpiry - 60000) return uspsToken;
+  const resp = await axios.post(
+    'https://apis.usps.com/oauth2/v3/token',
+    { client_id: USPS_CLIENT_ID, client_secret: USPS_CLIENT_SECRET, grant_type: 'client_credentials' },
+    { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+  );
+  uspsToken = resp.data.access_token;
+  uspsTokenExpiry = Date.now() + (parseInt(resp.data.expires_in) * 1000);
+  console.log('USPS token obtained, expires in', resp.data.expires_in, 's');
+  return uspsToken;
 }
 
-// ── AfterShip tracking ────────────────────────────────────────────────────────
+// ── USPS Tracking API v3 ──────────────────────────────────────────────────────
 async function scrapeCarrierStatus(carrier, trackingNumber) {
   const url = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
   let status = 'unknown', delivered = false, deliveryDate = null;
 
-  if (!AFTERSHIP_API_KEY) {
-    console.log('No AFTERSHIP_API_KEY configured');
+  if (!USPS_CLIENT_ID || !USPS_CLIENT_SECRET) {
+    console.log('No USPS_CLIENT_ID / USPS_CLIENT_SECRET configured');
     return { status, delivered, deliveryDate, url, carrier, trackingNumber };
   }
 
-  const slug = getAfterShipSlug(carrier);
-  const body = { tracking: { tracking_number: trackingNumber } };
-  if (slug) body.tracking.slug = slug;
-
   try {
-    let tracking;
-    try {
-      const createResp = await axios.post(
-        'https://api.aftership.com/tracking/2024-04/trackings',
-        body,
-        {
-          headers: { 'as-api-key': AFTERSHIP_API_KEY, 'Content-Type': 'application/json' },
-          timeout: 15000,
-        }
-      );
-      tracking = createResp.data.data.tracking;
-    } catch (createErr) {
-      const code = createErr.response?.data?.meta?.code;
-      // 4003 = already exists, 4007 = bad tracking number format
-      if (code === 4003) {
-        // Tracking already exists — search for it by tracking number
-        const searchResp = await axios.get(
-          `https://api.aftership.com/tracking/2024-04/trackings?tracking_numbers=${encodeURIComponent(trackingNumber)}`,
-          { headers: { 'as-api-key': AFTERSHIP_API_KEY }, timeout: 15000 }
-        );
-        tracking = searchResp.data.data?.trackings?.[0];
-      } else {
-        throw createErr;
+    const token = await getUspsToken();
+    const resp = await axios.get(
+      `https://apis.usps.com/tracking/v3/tracking/${encodeURIComponent(trackingNumber)}?expand=DETAIL`,
+      {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
+        timeout: 10000,
       }
-    }
+    );
+    const data = resp.data;
+    console.log('USPS tracking response for', trackingNumber, ':', JSON.stringify(data).slice(0, 500));
 
-    if (!tracking) {
-      console.log('AfterShip: no tracking data for', trackingNumber);
-      return { status: 'unknown', delivered: false, deliveryDate: null, url, carrier, trackingNumber };
-    }
+    const eventType = (data.eventType || '').toUpperCase();
+    const category  = (data.statusCategory || '').toUpperCase();
 
-    const tag = tracking.tag || '';
-    console.log('AfterShip tag:', tag, '| subtag:', tracking.subtag, '| for:', trackingNumber);
-
-    if (tag === 'Delivered') {
+    if (eventType === 'DELIVERED' || category === 'DELIVERED') {
       status = 'delivered';
       delivered = true;
-    } else if (['InTransit', 'OutForDelivery', 'AvailableForPickup', 'InfoReceived', 'AttemptFail'].includes(tag)) {
+    } else if (eventType || data.expectedDeliveryDate) {
       status = 'transit';
-      const edd = tracking.latest_estimated_delivery?.date || tracking.estimated_delivery_date;
-      if (edd) {
-        try { deliveryDate = new Date(edd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch {}
+      if (data.expectedDeliveryDate) {
+        try {
+          deliveryDate = new Date(data.expectedDeliveryDate)
+            .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } catch {}
       }
-    } else if (tag === 'Pending') {
-      status = 'pending';
     }
 
   } catch (err) {
-    console.error('AfterShip error for', trackingNumber, ':', err.message);
-    if (err.response) console.error('AfterShip response:', JSON.stringify(err.response.data || '').slice(0, 300));
+    console.error('USPS API error for', trackingNumber, ':', err.message);
+    if (err.response) console.error('USPS response:', JSON.stringify(err.response.data || '').slice(0, 300));
     status = 'error';
   }
 
@@ -638,38 +618,19 @@ app.get('/api/debug-tracking', async (req, res) => {
 
 // ── Debug: see raw AfterShip response for a tracking number ──────────────────
 app.get('/api/debug-ship24', async (req, res) => {
-  const { trackingNumber, carrier } = req.query;
+  const { trackingNumber } = req.query;
   if (!trackingNumber) return res.status(400).json({ error: 'trackingNumber required' });
-  if (!AFTERSHIP_API_KEY) return res.status(400).json({ error: 'AFTERSHIP_API_KEY not set' });
-
-  const slug = getAfterShipSlug(carrier || '');
-  const results = {};
-
-  // Try versioned API (2024-04) with as-api-key header
+  if (!USPS_CLIENT_ID || !USPS_CLIENT_SECRET) return res.status(400).json({ error: 'USPS_CLIENT_ID / USPS_CLIENT_SECRET not set' });
   try {
-    const body = { tracking: { tracking_number: trackingNumber } };
-    if (slug) body.tracking.slug = slug;
-    const r = await axios.post(
-      'https://api.aftership.com/tracking/2024-04/trackings',
-      body,
-      { headers: { 'as-api-key': AFTERSHIP_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 }
+    const token = await getUspsToken();
+    const resp = await axios.get(
+      `https://apis.usps.com/tracking/v3/tracking/${encodeURIComponent(trackingNumber)}?expand=DETAIL`,
+      { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }, timeout: 10000 }
     );
-    results.versioned_2024_04 = r.data;
-  } catch(e) { results.versioned_2024_04 = { error: e.message, response: e.response?.data }; }
-
-  // Try legacy v4 API with aftership-api-key header
-  try {
-    const body = { tracking: { tracking_number: trackingNumber } };
-    if (slug) body.tracking.slug = slug;
-    const r = await axios.post(
-      'https://api.aftership.com/v4/trackings',
-      body,
-      { headers: { 'aftership-api-key': AFTERSHIP_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 }
-    );
-    results.legacy_v4 = r.data;
-  } catch(e) { results.legacy_v4 = { error: e.message, response: e.response?.data }; }
-
-  res.json(results);
+    res.json(resp.data);
+  } catch(err) {
+    res.json({ error: err.message, response: err.response?.data });
+  }
 });
 
 // ── Check real delivery status by scraping carrier page ───────────────────────
