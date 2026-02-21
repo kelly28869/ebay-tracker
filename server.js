@@ -249,10 +249,23 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+const crypto = require('crypto');
+const EBAY_VERIFICATION_TOKEN = '7ab45f03b81598d67a1a5893a79e82de03914e64b8ada9f3fc23524b23aedba2';
+const ENDPOINT_URL = 'https://ebay-tracker.onrender.com/ebay/account-deletion';
+
+app.get('/ebay/account-deletion', (req, res) => {
+  const challengeCode = req.query.challenge_code;
+  const hash = crypto.createHash('sha256')
+    .update(challengeCode + EBAY_VERIFICATION_TOKEN + ENDPOINT_URL)
+    .digest('hex');
+  res.json({ challengeResponse: hash });
+});
+
 app.post('/ebay/account-deletion', (req, res) => {
   console.log('eBay account deletion notification:', req.body);
   res.status(200).json({ acknowledged: true });
 });
+```
 
 app.listen(PORT, () => {
   console.log(`\n🚀 eBay Order Tracker running at http://localhost:${PORT}`);
