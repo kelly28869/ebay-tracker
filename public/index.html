@@ -58,6 +58,12 @@
   .cal-action-btn.primary:hover{background:#154a8a;}
   .cal-action-btn.secondary{background:var(--surface);border:1px solid var(--border2);color:var(--text2);}
   .cal-action-btn.secondary:hover{border-color:var(--text);color:var(--text);}
+  .cal-day.range-start{background:var(--accent2);color:#fff;border-radius:4px 0 0 4px;}
+  .cal-day.range-end{background:var(--accent2);color:#fff;border-radius:0 4px 4px 0;}
+  .cal-day.range-start.range-end{border-radius:4px;}
+  .cal-day.in-range{background:#dbeafe;color:var(--accent2);border-radius:0;border-color:transparent;}
+  .cal-day.range-start,.cal-day.range-end{border-color:var(--accent2);}
+  .cal-range-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:8px;min-height:16px;}
 
   .days-select{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:8px 32px 8px 12px;font-family:'DM Sans',sans-serif;font-size:13px;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;border-radius:4px;}
   .btn-primary{background:var(--accent2);color:#fff;border:none;padding:9px 22px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer;border-radius:4px;transition:background 0.15s;white-space:nowrap;}
@@ -153,6 +159,7 @@
   .status.label{color:#5b21b6;background:#ede9fe;}
   .status.pending{color:var(--muted);background:var(--surface2);border:1px solid var(--border);}
   .delivered-date{font-size:10px;color:var(--delivered);margin-top:3px;font-family:'DM Mono',monospace;opacity:0.8;}
+  .qty-badge{font-size:12px;font-weight:600;color:var(--text2);font-family:'DM Mono',monospace;}
   .delivery-date-val{font-size:12px;color:var(--transit);font-family:'DM Mono',monospace;font-weight:500;}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
   .status.transit::before{animation:pulse 1.8s infinite;}
@@ -204,8 +211,10 @@
           <button class="cal-nav" id="calNavNext" onclick="calNavNext()">›</button>
         </div>
         <div id="calGrid"></div>
+        <div class="cal-range-hint" id="calRangeHint">Click a date or drag to select a range</div>
         <div class="cal-actions">
-          <button class="cal-action-btn secondary" onclick="clearCalFilter()">✕ Clear filter</button>
+          <button class="cal-action-btn primary" id="calApplyBtn" onclick="applyCalFilter()" disabled>Apply</button>
+          <button class="cal-action-btn secondary" onclick="clearCalFilter()">✕ Clear</button>
         </div>
       </div>
     </div>
@@ -242,6 +251,7 @@
     <div class="stat-cell clickable" id="scDelivered" onclick="toggleStatFilter('delivered','scDelivered')"><div class="stat-label">Delivered</div><div class="stat-value v-delivered" id="statDelivered">—</div></div>
     <div class="stat-cell clickable" id="scTransit" onclick="toggleStatFilter('transit','scTransit')"><div class="stat-label">In Transit</div><div class="stat-value v-transit" id="statTransit">—</div></div>
     <div class="stat-cell clickable" id="scPending" onclick="toggleStatFilter('pending','scPending')"><div class="stat-label">Pending</div><div class="stat-value v-muted" id="statPending">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Total Qty</div><div class="stat-value v-default" id="statQty">—</div></div>
     <div class="stat-cell"><div class="stat-label">Total Spent</div><div class="stat-value v-accent" id="statSpent">—</div></div>
   </div>
 
@@ -261,6 +271,7 @@
           <th id="th-orderId" onclick="sortBy('orderId')">Order #</th>
           <th id="th-item" onclick="sortBy('item')">Item</th>
           <th id="th-seller" onclick="sortBy('seller')">Seller</th>
+          <th id="th-qty" onclick="sortBy('quantity')" style="text-align:center;">Qty</th>
           <th id="th-carrier" onclick="sortBy('carrier')">Carrier</th>
           <th>Tracking # <small style="font-weight:400;color:var(--muted);font-size:9px;">(click to verify status)</small></th>
           <th id="th-status" onclick="sortBy('status')">Status</th>
@@ -308,7 +319,11 @@ let allOrders = [];
 let currentFilter = 'all';
 let sortKey = 'date', sortDir = -1;
 let currentPage = 1, pageSize = 50;
-let calFilterDate = null, calSelectedDate = null;
+// Calendar state
+let calFilterDate = null;   // applied filter (single Date or {from, to})
+let calRangeStart = null;   // first click in current selection
+let calRangeEnd   = null;   // second click (or null if only one picked)
+let calHoverDate  = null;   // for hover preview
 let calViewYear, calViewMonth;
 const statusLabels = {delivered:'Delivered',transit:'In Transit',pending:'Pending',out_for_delivery:'Out for Delivery'};
 const today = new Date();
@@ -363,7 +378,6 @@ function renderCal() {
   grid.innerHTML = '';
 
   if (calView === 'year') {
-    // ── Year picker: show 12-year block ─────────────────────────────────────
     const startYear = Math.floor(calViewYear / 12) * 12;
     label.textContent = startYear + ' – ' + (startYear + 11);
     grid.className = 'cal-year-grid';
@@ -371,14 +385,13 @@ function renderCal() {
       const el = document.createElement('div');
       const isFuture = y > today.getFullYear();
       const isCurrent = y === today.getFullYear();
-      el.className = 'cal-pick-item' + (isCurrent ? ' current' : '') + (isFuture ? ' future-item' : '');
+      el.className = 'cal-pick-item' + (isCurrent?' current':'') + (isFuture?' future-item':'');
       el.textContent = y;
       if (!isFuture) el.onclick = () => { calViewYear = y; calView = 'month'; renderCal(); };
       grid.appendChild(el);
     }
 
   } else if (calView === 'month') {
-    // ── Month picker: show all 12 months for calViewYear ────────────────────
     label.textContent = String(calViewYear);
     grid.className = 'cal-month-grid';
     MONTHS_SHT.forEach((name, idx) => {
@@ -386,18 +399,18 @@ function renderCal() {
       const isFuture = calViewYear > today.getFullYear() ||
                        (calViewYear === today.getFullYear() && idx > today.getMonth());
       const isCurrent = calViewYear === today.getFullYear() && idx === today.getMonth();
-      el.className = 'cal-pick-item' + (isCurrent ? ' current' : '') + (isFuture ? ' future-item' : '');
+      el.className = 'cal-pick-item' + (isCurrent?' current':'') + (isFuture?' future-item':'');
       el.textContent = name;
       if (!isFuture) el.onclick = () => { calViewMonth = idx; calView = 'day'; renderCal(); };
       grid.appendChild(el);
     });
 
   } else {
-    // ── Day picker ───────────────────────────────────────────────────────────
+    // ── Day picker with range support ────────────────────────────────────────
     label.textContent = MONTHS[calViewMonth] + ' ' + calViewYear;
     grid.className = 'cal-grid';
     ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
-      const el = document.createElement('div'); el.className = 'cal-dow'; el.textContent = d; grid.appendChild(el);
+      const dEl = document.createElement('div'); dEl.className = 'cal-dow'; dEl.textContent = d; grid.appendChild(dEl);
     });
     const firstDay = new Date(calViewYear, calViewMonth, 1).getDay();
     const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
@@ -409,30 +422,93 @@ function renderCal() {
       const thisDate = new Date(calViewYear, calViewMonth, d);
       const isFuture = thisDate > today;
       const isToday  = thisDate.toDateString() === todayStr;
-      const isSel    = calSelectedDate && thisDate.toDateString() === calSelectedDate.toDateString();
-      el.className = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'') + (isSel?' selected':'');
+
+      // Determine range classes
+      let cls = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'');
+      if (!isFuture && calRangeStart) {
+        const hoverEnd = calHoverDate || calRangeEnd;
+        const lo = calRangeEnd || hoverEnd
+          ? new Date(Math.min(calRangeStart, hoverEnd||calRangeStart))
+          : calRangeStart;
+        const hi = calRangeEnd || hoverEnd
+          ? new Date(Math.max(calRangeStart, hoverEnd||calRangeStart))
+          : calRangeStart;
+        const isStart = thisDate.toDateString() === lo.toDateString();
+        const isEnd   = thisDate.toDateString() === hi.toDateString();
+        const inRange = thisDate >= lo && thisDate <= hi;
+        if (isStart) cls += ' range-start';
+        if (isEnd)   cls += ' range-end';
+        if (inRange && !isStart && !isEnd) cls += ' in-range';
+      }
+
+      el.className = cls;
       el.textContent = d;
-      if (!isFuture) el.onclick = () => { calSelectedDate = new Date(calViewYear, calViewMonth, d); applyCalFilter(); };
+      if (!isFuture) {
+        el.onclick = () => calDayClick(new Date(calViewYear, calViewMonth, d));
+        el.onmouseenter = () => { calHoverDate = new Date(calViewYear, calViewMonth, d); renderCal(); };
+        el.onmouseleave = () => { calHoverDate = null; renderCal(); };
+      }
       grid.appendChild(el);
     }
+  }
+  updateCalHint();
+}
+
+function calDayClick(date) {
+  if (!calRangeStart || calRangeEnd) {
+    // Start fresh selection
+    calRangeStart = date;
+    calRangeEnd   = null;
+  } else {
+    // Second click — set end (allow clicking same day for single-day)
+    if (date < calRangeStart) {
+      calRangeEnd   = calRangeStart;
+      calRangeStart = date;
+    } else {
+      calRangeEnd = date;
+    }
+  }
+  // Enable Apply button whenever we have at least a start date
+  document.getElementById('calApplyBtn').disabled = false;
+  renderCal();
+}
+
+function updateCalHint() {
+  const hint = document.getElementById('calRangeHint');
+  if (!hint) return;
+  if (!calRangeStart) {
+    hint.textContent = 'Click a date, or click two dates for a range';
+  } else if (!calRangeEnd) {
+    const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    hint.textContent = fmt(calRangeStart) + ' — click another date to set range end';
+  } else {
+    const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const lo = new Date(Math.min(calRangeStart,calRangeEnd));
+    const hi = new Date(Math.max(calRangeStart,calRangeEnd));
+    hint.textContent = lo.toDateString()===hi.toDateString()
+      ? fmt(lo)
+      : fmt(lo) + ' – ' + fmt(hi);
   }
 }
 
 function applyCalFilter() {
-  if (!calSelectedDate) return;
-  calFilterDate = new Date(calSelectedDate);
+  if (!calRangeStart) return;
+  const lo = calRangeEnd ? new Date(Math.min(calRangeStart,calRangeEnd)) : calRangeStart;
+  const hi = calRangeEnd ? new Date(Math.max(calRangeStart,calRangeEnd)) : calRangeStart;
+  calFilterDate = { from: lo, to: hi };
   document.getElementById('calBtn').classList.add('active');
+  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   document.getElementById('calBtnLabel').textContent =
-    calFilterDate.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    lo.toDateString()===hi.toDateString() ? fmt(lo) : fmt(lo) + ' – ' + fmt(hi);
   document.getElementById('calPopup').classList.remove('open');
   currentPage = 1;
-  // Fetch all orders from eBay for the selected date (full day, midnight to midnight)
-  fetchOrdersForDate(calFilterDate);
+  fetchOrdersForDate(lo, hi);
 }
 
 function clearCalFilter() {
-  calFilterDate = null; calSelectedDate = null;
+  calFilterDate = null; calRangeStart = null; calRangeEnd = null; calHoverDate = null;
   calView = 'day';
+  document.getElementById('calApplyBtn').disabled = true;
   renderCal();
   document.getElementById('calBtn').classList.remove('active');
   document.getElementById('calBtnLabel').textContent = 'Pick a date';
@@ -443,8 +519,8 @@ function clearCalFilter() {
 
 // ── Range dropdown ────────────────────────────────────────────────────────────
 function onRangeChange() {
-  // Clear calendar filter
-  calFilterDate = null; calSelectedDate = null;
+  calFilterDate = null; calRangeStart = null; calRangeEnd = null; calHoverDate = null;
+  document.getElementById('calApplyBtn').disabled = true;
   document.getElementById('calBtn').classList.remove('active');
   document.getElementById('calBtnLabel').textContent = 'Pick a date';
   fetchOrders();
@@ -504,6 +580,7 @@ async function fetchOrders() {
         status: o.deliveryStatus,
         confirmedStatus: null,
         deliveryDate: null,
+        quantity: o.totalQuantity || o.items.reduce((s,i)=>s+(i.quantity||1),0) || 1,
         date: o.createdDate,
         dateObj: o.createdDate ? new Date(o.createdDate) : null,
         actualDeliveryTime: o.actualDeliveryTime || null,
@@ -521,13 +598,14 @@ async function fetchOrders() {
 }
 
 // ── Fetch orders for a specific calendar date ────────────────────────────────
-async function fetchOrdersForDate(date) {
+async function fetchOrdersForDate(fromDate, toDate) {
   const btn = document.getElementById('syncBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Syncing…';
 
-  // Build full-day window: midnight to 23:59:59 in local time, sent as ISO
-  const from = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
-  const to   = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+  // from = start of fromDate, to = end of toDate (or end of fromDate if single day)
+  const endDate = toDate || fromDate;
+  const from = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate(), 0, 0, 0);
+  const to   = new Date(endDate.getFullYear(),  endDate.getMonth(),  endDate.getDate(),  23, 59, 59);
 
   try {
     const res = await fetch(`/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`);
@@ -545,6 +623,7 @@ async function fetchOrdersForDate(date) {
       status: o.deliveryStatus,
       confirmedStatus: null,
       deliveryDate: null,
+      quantity: o.totalQuantity || o.items.reduce((s,i)=>s+(i.quantity||1),0) || 1,
       date: o.createdDate,
       dateObj: o.createdDate ? new Date(o.createdDate) : null,
       actualDeliveryTime: o.actualDeliveryTime || null,
@@ -556,7 +635,8 @@ async function fetchOrdersForDate(date) {
     renderTable();
     document.getElementById('lastSync').textContent = new Date().toLocaleTimeString();
     document.getElementById('setupPanel').classList.add('hidden');
-    const label = date.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const label = from.toDateString()===to.toDateString() ? fmt(from) : fmt(from)+' – '+fmt(to);
     showAlert('success', `✓ Loaded ${allOrders.length} orders for ${label}`);
   } catch(err) { showAlert('error', `✗ Error: ${err.message}`); }
   finally { btn.disabled=false; btn.textContent='↻ Sync eBay'; }
@@ -569,6 +649,7 @@ function recomputeStats() {
   animateNum('statDelivered', allOrders.filter(o=>eff(o)==='delivered').length);
   animateNum('statTransit',   allOrders.filter(o=>eff(o)==='transit').length);
   animateNum('statPending',   allOrders.filter(o=>eff(o)==='pending').length);
+  animateNum('statQty', allOrders.reduce((s,o)=>s+(o.quantity||1),0));
   document.getElementById('statSpent').textContent =
     '$' + allOrders.reduce((s,o)=>s+o.price,0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
@@ -615,7 +696,13 @@ function getFiltered() {
     .filter(o => {
       const eff = o.confirmedStatus || o.status;
       if (currentFilter !== 'all' && eff !== currentFilter) return false;
-      if (calFilterDate && o.dateObj && o.dateObj.toDateString() !== calFilterDate.toDateString()) return false;
+      if (calFilterDate && o.dateObj) {
+        const lo = calFilterDate.from || calFilterDate;
+        const hi = calFilterDate.to   || calFilterDate;
+        const fromMid = new Date(lo.getFullYear(), lo.getMonth(), lo.getDate(), 0, 0, 0);
+        const toMid   = new Date(hi.getFullYear(), hi.getMonth(), hi.getDate(), 23, 59, 59);
+        if (o.dateObj < fromMid || o.dateObj > toMid) return false;
+      }
       if (q && !(o.orderId.toLowerCase().includes(q)||o.item.toLowerCase().includes(q)||o.seller.toLowerCase().includes(q)||o.trackingNumber.toLowerCase().includes(q))) return false;
       return true;
     })
@@ -637,7 +724,7 @@ function renderTable() {
   const tbody = document.getElementById('tableBody');
 
   if (!page.length) {
-    tbody.innerHTML=`<tr><td colspan="9"><div class="empty-state"><div class="icon">🔍</div><div class="title">No orders found</div><div class="sub">Try adjusting your search, filter, or date</div></div></td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="10"><div class="empty-state"><div class="icon">🔍</div><div class="title">No orders found</div><div class="sub">Try adjusting your search, filter, or date</div></div></td></tr>`;
     document.getElementById('paginationBar').style.display='none';
     document.getElementById('orderCountLabel').textContent='';
     return;
@@ -690,6 +777,7 @@ function renderTable() {
       </td>
       <td><div class="item-name" title="${o.item}">${o.item}</div>${itemIdsHtml}</td>
       <td>${sellerHtml}</td>
+      <td style="text-align:center;"><span class="qty-badge">${o.quantity > 1 ? 'x'+o.quantity : o.quantity}</span></td>
       <td>${carrierHtml}</td>
       <td>${trackingHtml}</td>
       <td id="statusCell_${globalIdx}">
@@ -708,7 +796,14 @@ function renderTable() {
 
   // Pagination bar
   document.getElementById('paginationBar').style.display='flex';
-  const calLabel = calFilterDate ? ' on ' + calFilterDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
+  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const calLabel = calFilterDate
+    ? ' for ' + (calFilterDate.from
+        ? (calFilterDate.from.toDateString()===calFilterDate.to.toDateString()
+            ? fmt(calFilterDate.from)
+            : fmt(calFilterDate.from)+' – '+fmt(calFilterDate.to))
+        : fmt(calFilterDate))
+    : '';
   document.getElementById('pageInfo').innerHTML=`Showing <strong>${start+1}–${end}</strong> of <strong>${total}</strong> orders${calLabel}`;
   document.getElementById('orderCountLabel').textContent=`${total} order${total!==1?'s':''} shown`;
 
@@ -811,22 +906,30 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
 
     if (data.status === 'delivered') {
       allOrders[orderIdx].confirmedStatus = 'delivered';
+      allOrders[orderIdx].deliveryDate = null; // blank when delivered
       link.classList.remove('checking'); link.classList.add('is-delivered');
       link.innerHTML = `${trackingNumber} <span class="track-badge delivered">✓ Delivered</span>`;
       const sc = document.getElementById('statusCell_'+orderIdx);
-      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ ${data.carrier||'carrier'}</span>`;
+      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ USPS</span>`;
+      const dc = document.getElementById('deliveryDateCell_'+orderIdx);
+      if (dc) dc.innerHTML = '<span class="no-val">—</span>';
       recomputeStats();
-      showAlert('success', `✓ Confirmed delivered: ${trackingNumber}`);
+      showAlert('success', `✓ USPS confirms delivered: ${trackingNumber}`);
     } else if (data.status === 'transit') {
       allOrders[orderIdx].confirmedStatus = 'transit';
+      allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
       link.classList.remove('checking'); link.classList.add('is-transit');
       link.innerHTML = `${trackingNumber} <span class="track-badge transit">In Transit</span>`;
       const sc = document.getElementById('statusCell_'+orderIdx);
-      if (sc) sc.innerHTML = `<span class="status transit">In Transit</span> <span class="verified-tag">✓ ${data.carrier||'carrier'}</span>`;
+      if (sc) sc.innerHTML = `<span class="status transit">In Transit</span> <span class="verified-tag">✓ USPS</span>`;
+      const dc = document.getElementById('deliveryDateCell_'+orderIdx);
+      if (dc) dc.innerHTML = data.deliveryDate
+        ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
+        : '<span class="no-val">—</span>';
       recomputeStats();
       if (data.url) window.open(data.url, '_blank');
     } else {
-      // unknown — couldn't read page, just open carrier site
+      // unknown/error — just open carrier site, don't change status
       link.classList.remove('checking');
       link.textContent = trackingNumber;
       if (data.url) window.open(data.url, '_blank');

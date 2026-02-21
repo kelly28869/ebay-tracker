@@ -16,6 +16,9 @@ const {
   EBAY_DEV_ID,
   EBAY_CERT_ID,
   EBAY_USER_TOKEN,
+  USPS_CLIENT_ID,
+  USPS_CLIENT_SECRET,
+  SHIP24_API_KEY,
   DASHBOARD_USERNAME = 'admin',
   DASHBOARD_PASSWORD,
   PORT = 3000
@@ -417,6 +420,7 @@ function parseOrder(order) {
   }));
 
   const totalRaw = order.Total;
+  const totalQuantity = items.reduce((sum, i) => sum + (i.quantity || 1), 0);
   return {
     orderId: order.OrderID || '',
     extendedOrderId: order.ExtendedOrderID || order.OrderID || '',
@@ -424,6 +428,7 @@ function parseOrder(order) {
     orderStatus: order.OrderStatus || '',
     deliveryStatus,
     items,
+    totalQuantity,
     tracking: allTracking,
     totalAmount: parseFloat((totalRaw && totalRaw._) || totalRaw || '0'),
     currency: (totalRaw && totalRaw.$ && totalRaw.$.currencyID) || 'USD',
@@ -440,106 +445,69 @@ function parseOrder(order) {
 // This is the most accurate method — reads what the carrier website actually says.
 async function scrapeCarrierStatus(carrier, trackingNumber) {
   const c = (carrier || '').toUpperCase();
-  let url, delivered = false, status = 'unknown';
+  const url = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
+  let status = 'unknown', delivered = false, deliveryDate = null;
 
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-  };
-
-  // Parse carrier page using exact phrases:
-  //   "Your item was delivered"  → delivered
-  //   "Expected Delivery by"     → transit
-  function parseCarrierHtml(html) {
-    if (html.includes('Your item was delivered')) return 'delivered';
-    if (html.includes('Expected Delivery by'))    return 'transit';
-    return 'unknown';
+  if (!SHIP24_API_KEY) {
+    console.log('No SHIP24_API_KEY configured');
+    return { status, delivered, deliveryDate, url, carrier, trackingNumber };
   }
 
   try {
-    if (c.includes('USPS') || c.includes('US POSTAL')) {
-      url = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
-
-      // USPS renders tracking via JavaScript, so plain HTML scraping gets an empty shell.
-      // Instead use the USPS mobile/summary API which returns server-rendered HTML with
-      // the actual status text including "Your item was delivered" and "Expected Delivery by".
-      const apiResp = await axios.get(
-        `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`,
-        {
-          headers: {
-            ...headers,
-            'Accept': 'text/html,application/xhtml+xml',
-            'Referer': 'https://www.usps.com/',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-mode': 'navigate',
-          },
-          timeout: 10000,
-        }
-      );
-      console.log('USPS response length:', apiResp.data.length);
-      console.log('USPS snippet:', apiResp.data.slice(0, 300));
-      status = parseCarrierHtml(apiResp.data);
-      delivered = status === 'delivered';
-
-      // If HTML scrape returned unknown, try the USPS tracking summary API (JSON)
-      if (status === 'unknown') {
-        try {
-          const jsonResp = await axios.post(
-            'https://tools.usps.com/go/TrackConfirmAction',
-            `data=[{"TrackSummary":{"EventTime":"","EventDate":"","Event":"","EventCity":"","EventState":"","EventZIPCode":"","EventCountry":"","FirmName":"","Name":"","AuthorizedAgent":"","DeliveryAttributeCode":""},"TrackDetail":[],"TrackID":"${trackingNumber}"}]`,
-            {
-              headers: {
-                ...headers,
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest',
-              },
-              timeout: 8000,
-            }
-          );
-          console.log('USPS JSON API response:', JSON.stringify(jsonResp.data).slice(0, 300));
-          const jsonStr = JSON.stringify(jsonResp.data);
-          status = parseCarrierHtml(jsonStr);
-          delivered = status === 'delivered';
-        } catch (e) {
-          console.log('USPS JSON API fallback failed:', e.message);
-        }
+    // Ship24 universal tracking API — works for USPS, UPS, FedEx, DHL, and 1500+ carriers
+    // POST /trackers/track creates a tracker and returns results synchronously
+    const resp = await axios.post(
+      'https://api.ship24.com/public/v1/trackers/track',
+      { trackingNumber, shipmentReference: trackingNumber },
+      {
+        headers: {
+          'Authorization': `Bearer ${SHIP24_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000, // Ship24 can take up to 30s on first lookup
       }
+    );
 
-    } else if (c.includes('UPS')) {
-      url = `https://www.ups.com/track?tracknum=${trackingNumber}`;
-      const apiResp = await axios.get(
-        `https://www.ups.com/track?loc=en_US&tracknum=${trackingNumber}&requester=WT/trackdetails`,
-        { headers, timeout: 8000 }
-      );
-      status = parseCarrierHtml(apiResp.data);
-      delivered = status === 'delivered';
+    const data = resp.data;
+    console.log('Ship24 response for', trackingNumber, ':', JSON.stringify(data).slice(0, 500));
 
-    } else if (c.includes('FEDEX') || c.includes('FED EX')) {
-      url = `https://www.fedex.com/apps/fedextrack/?tracknumbers=${trackingNumber}`;
-      const apiResp = await axios.get(url, { headers, timeout: 8000 });
-      status = parseCarrierHtml(apiResp.data);
-      delivered = status === 'delivered';
-
-    } else if (c.includes('DHL')) {
-      url = `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${trackingNumber}`;
-      const apiResp = await axios.get(url, { headers, timeout: 8000 });
-      status = parseCarrierHtml(apiResp.data);
-      delivered = status === 'delivered';
-
-    } else {
-      url = `https://www.ebay.com/orders`;
-      status = 'unknown';
+    // Response: data.data.trackings[0]
+    const tracking = data.data && data.data.trackings && data.data.trackings[0];
+    if (!tracking) {
+      console.log('Ship24: no tracking data returned');
+      return { status: 'unknown', delivered: false, deliveryDate: null, url, carrier, trackingNumber };
     }
+
+    // statusMilestone is the overall shipment status — reliable across all carriers
+    // Values: "pending" | "in_transit" | "out_for_delivery" | "delivered" | "available_for_pickup" | "delivery_failure" | "unknown"
+    const shipment = tracking.shipment || {};
+    const milestone = (shipment.statusMilestone || '').toLowerCase();
+    console.log('Ship24 statusMilestone:', milestone, 'for', trackingNumber);
+
+    if (milestone === 'delivered') {
+      status = 'delivered';
+      delivered = true;
+    } else if (['in_transit', 'out_for_delivery', 'available_for_pickup'].includes(milestone)) {
+      status = 'transit';
+      // Estimated delivery date
+      if (shipment.estimatedDeliveryDate) {
+        try {
+          deliveryDate = new Date(shipment.estimatedDeliveryDate)
+            .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } catch {}
+      }
+    } else if (milestone === 'pending') {
+      status = 'pending';
+    }
+
   } catch (err) {
-    console.error('Carrier scrape error for ' + trackingNumber + ':', err.message);
+    console.error('Ship24 error for', trackingNumber, ':', err.message);
+    if (err.response) console.error('Status:', err.response.status, JSON.stringify(err.response.data || '').slice(0, 200));
     status = 'error';
   }
 
-  return { status, delivered, url, carrier, trackingNumber };
-}
-
-// ── Routes ───────────────────────────────────────────────────────────────────
+  return { status, delivered, deliveryDate, url, carrier, trackingNumber };
+}// ── Routes ───────────────────────────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {
   res.json({
