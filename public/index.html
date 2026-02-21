@@ -161,6 +161,11 @@
   .delivered-date{font-size:10px;color:var(--delivered);margin-top:3px;font-family:'DM Mono',monospace;opacity:0.8;}
   .qty-badge{font-size:12px;font-weight:600;color:var(--text2);font-family:'DM Mono',monospace;}
   .delivery-date-val{font-size:12px;color:var(--transit);font-family:'DM Mono',monospace;font-weight:500;}
+  .note-cell{min-width:140px;max-width:200px;}
+  .note-input{width:100%;border:none;background:transparent;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text2);padding:4px 6px;border-radius:4px;outline:none;resize:none;line-height:1.4;transition:background 0.15s,box-shadow 0.15s;}
+  .note-input:hover{background:var(--surface2);}
+  .note-input:focus{background:var(--surface2);box-shadow:0 0 0 2px rgba(26,86,160,0.15);}
+  .note-input::placeholder{color:var(--muted);font-style:italic;}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
   .status.transit::before{animation:pulse 1.8s infinite;}
 
@@ -277,6 +282,7 @@
           <th>Tracking # <small style="font-weight:400;color:var(--muted);font-size:9px;">(click to verify status)</small></th>
           <th id="th-status" onclick="sortBy('status')">Status</th>
           <th id="th-deliveryDate">Delivery Date</th>
+          <th>Notes</th>
           <th id="th-date" onclick="sortBy('date')">Ordered</th>
           <th id="th-price" onclick="sortBy('price')">Paid</th>
         </tr>
@@ -677,24 +683,32 @@ async function fetchOrdersForDate(fromDate, toDate) {
 // ── Auto-apply saved tracking statuses after every sync ───────────────────────
 async function applyStoredStatuses() {
   try {
-    const res = await fetch('/api/tracking-statuses');
+    const [res, nr] = await Promise.all([
+      fetch('/api/tracking-statuses'),
+      fetch('/api/notes')
+    ]);
     const store = await res.json();
+    const notesData = await nr.json().catch(() => ({}));
+
+    // Apply saved notes to order objects
+    allOrders.forEach(o => {
+      const orderId = o.extendedOrderId || o.orderId;
+      if (notesData[orderId]) o.note = notesData[orderId].note;
+    });
+
     let applied = 0;
     allOrders.forEach((o, idx) => {
       if (!o.trackingNumber) return;
       const saved = store[o.trackingNumber];
       if (!saved) return;
-      // Apply saved status to order object
       o.confirmedStatus = saved.status;
       o.deliveryDate = saved.deliveryDate || null;
-      // Update status cell if rendered
       const sc = document.getElementById('statusCell_' + idx);
       if (sc) {
         const label = saved.status === 'delivered' ? 'Delivered' : saved.status === 'transit' ? 'In Transit' : saved.status;
         const cls   = saved.status === 'delivered' ? 'delivered' : saved.status === 'transit' ? 'transit' : 'pending';
         sc.innerHTML = `<span class="status ${cls}">${label}</span> <span class="verified-tag">✓ saved</span>`;
       }
-      // Update delivery date cell
       const dc = document.getElementById('deliveryDateCell_' + idx);
       if (dc) {
         dc.innerHTML = saved.deliveryDate
@@ -752,6 +766,21 @@ async function autoCheckAllTracking(savedStore) {
     recomputeStats();
   }
   console.log('Auto-check complete.');
+}
+
+async function saveNote(textarea) {
+  const orderId = textarea.dataset.orderid;
+  const note = textarea.value.trim();
+  // Update in allOrders so it persists across re-renders
+  const o = allOrders.find(o => (o.extendedOrderId || o.orderId) === orderId);
+  if (o) o.note = note;
+  try {
+    await fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, note })
+    });
+  } catch(e) { console.error('saveNote error:', e.message); }
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -895,6 +924,13 @@ function renderTable() {
         ${eff !== 'delivered' && o.deliveryDate
           ? `<span class="delivery-date-val">${o.deliveryDate}</span>`
           : '<span class="no-val">—</span>'}
+      </td>
+      <td class="note-cell">
+        <textarea class="note-input" rows="1" placeholder="Add note…"
+          data-orderid="${(o.extendedOrderId||o.orderId)}"
+          onblur="saveNote(this)"
+          oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+        >${o.note ? o.note.replace(/</g,'&lt;') : ''}</textarea>
       </td>
       <td><span class="no-val">${dateStr}</span></td>
       <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>

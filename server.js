@@ -30,6 +30,21 @@ function saveStatusStore(store) {
 
 let trackingStatusStore = loadStatusStore();
 console.log('Loaded', Object.keys(trackingStatusStore).length, 'saved tracking statuses');
+
+// ── Persistent notes store ────────────────────────────────────────────────────
+// Key = orderId, value = { note, savedAt }
+const NOTES_FILE = path.join('/tmp', 'order-notes.json');
+function loadNotesStore() {
+  try { if (fs.existsSync(NOTES_FILE)) return JSON.parse(fs.readFileSync(NOTES_FILE, 'utf8')); } 
+  catch(e) { console.error('loadNotesStore error:', e.message); }
+  return {};
+}
+function saveNotesStore(store) {
+  try { fs.writeFileSync(NOTES_FILE, JSON.stringify(store, null, 2)); }
+  catch(e) { console.error('saveNotesStore error:', e.message); }
+}
+let notesStore = loadNotesStore();
+console.log('Loaded', Object.keys(notesStore).length, 'saved notes');
 const EBAY_API_URL = 'https://api.ebay.com/ws/api.dll';
 const {
   EBAY_APP_ID,
@@ -714,6 +729,23 @@ app.post('/api/tracking-statuses', (req, res) => {
   if (!trackingNumber || !status) return res.status(400).json({ error: 'trackingNumber and status required' });
   trackingStatusStore[trackingNumber] = { status, deliveryDate: deliveryDate || null, carrier: carrier || '', savedAt: new Date().toISOString() };
   saveStatusStore(trackingStatusStore);
+  res.json({ ok: true });
+});
+
+// ── Notes store ───────────────────────────────────────────────────────────────
+app.get('/api/notes', (req, res) => {
+  res.json(notesStore);
+});
+
+app.post('/api/notes', (req, res) => {
+  const { orderId, note } = req.body;
+  if (!orderId) return res.status(400).json({ error: 'orderId required' });
+  if (note === '' || note === null || note === undefined) {
+    delete notesStore[orderId];
+  } else {
+    notesStore[orderId] = { note, savedAt: new Date().toISOString() };
+  }
+  saveNotesStore(notesStore);
   res.json({ ok: true });
 });
 
