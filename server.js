@@ -641,19 +641,35 @@ app.get('/api/debug-ship24', async (req, res) => {
   const { trackingNumber, carrier } = req.query;
   if (!trackingNumber) return res.status(400).json({ error: 'trackingNumber required' });
   if (!AFTERSHIP_API_KEY) return res.status(400).json({ error: 'AFTERSHIP_API_KEY not set' });
+
+  const slug = getAfterShipSlug(carrier || '');
+  const results = {};
+
+  // Try versioned API (2024-04) with as-api-key header
   try {
-    const slug = getAfterShipSlug(carrier || '');
     const body = { tracking: { tracking_number: trackingNumber } };
     if (slug) body.tracking.slug = slug;
-    const resp = await axios.post(
+    const r = await axios.post(
       'https://api.aftership.com/tracking/2024-04/trackings',
       body,
       { headers: { 'as-api-key': AFTERSHIP_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
-    res.json(resp.data);
-  } catch(err) {
-    res.json({ error: err.message, response: err.response?.data });
-  }
+    results.versioned_2024_04 = r.data;
+  } catch(e) { results.versioned_2024_04 = { error: e.message, response: e.response?.data }; }
+
+  // Try legacy v4 API with aftership-api-key header
+  try {
+    const body = { tracking: { tracking_number: trackingNumber } };
+    if (slug) body.tracking.slug = slug;
+    const r = await axios.post(
+      'https://api.aftership.com/v4/trackings',
+      body,
+      { headers: { 'aftership-api-key': AFTERSHIP_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 }
+    );
+    results.legacy_v4 = r.data;
+  } catch(e) { results.legacy_v4 = { error: e.message, response: e.response?.data }; }
+
+  res.json(results);
 });
 
 // ── Check real delivery status by scraping carrier page ───────────────────────
