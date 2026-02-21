@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrderRadar — Top Sellers</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#f0f0f0; --surface:#fff; --surface2:#f8f8f8; --border:#e0e0e0; --border2:#ccc;
+      --accent:#c84b2f; --accent2:#1a56a0; --text:#111; --text2:#444; --muted:#888;
+      --green:#1a7a4a; --green-bg:#edfaf3;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;font-size:14px;line-height:1.5;}
+
+    /* ── Header ── */
+    .header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;}
+    .logo h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;letter-spacing:-0.5px;}
+    .logo h1 em{font-style:italic;color:var(--accent);}
+    .logo h1 span{color:var(--muted);font-size:14px;font-family:'DM Sans',sans-serif;margin-left:10px;font-weight:400;}
+    .nav-link{font-size:13px;color:var(--accent2);text-decoration:none;font-weight:500;padding:6px 12px;border:1px solid var(--border2);border-radius:4px;transition:all 0.15s;}
+    .nav-link:hover{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+
+    /* ── Main layout ── */
+    .main{max-width:1100px;margin:0 auto;padding:28px 20px;}
+
+    /* ── Page title bar ── */
+    .page-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
+    .page-title h2{font-family:'DM Serif Display',serif;font-size:22px;font-weight:400;}
+    .page-title h2 em{font-style:italic;color:var(--accent);}
+    .subtitle{font-size:12px;color:var(--muted);margin-top:2px;}
+    .sync-btn{font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;background:var(--accent2);color:#fff;border:none;padding:8px 18px;border-radius:4px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:6px;}
+    .sync-btn:hover{background:#154a8a;}
+    .sync-btn:disabled{opacity:0.6;cursor:not-allowed;}
+    .tf-btn{font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;background:var(--surface);color:var(--text2);border:1px solid var(--border2);padding:7px 13px;border-radius:4px;cursor:pointer;transition:all 0.15s;white-space:nowrap;}
+    .tf-btn:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+    .tf-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+
+    /* ── Alert ── */
+    .alert{padding:10px 16px;border-radius:6px;font-size:13px;margin-bottom:18px;display:none;}
+    .alert.success{background:#edfaf3;color:var(--green);border:1px solid #b6e8d0;display:block;}
+    .alert.error{background:#fff0ee;color:var(--accent);border:1px solid #f5c6bc;display:block;}
+    .alert.info{background:#eef4ff;color:var(--accent2);border:1px solid #bcd4f5;display:block;}
+
+    /* ── Summary stats ── */
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px;}
+    .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
+    .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;margin-bottom:4px;}
+    .stat-value{font-family:'DM Mono',monospace;font-size:22px;font-weight:500;color:var(--text);}
+    .stat-value.accent{color:var(--accent2);}
+    .stat-value.red{color:var(--accent);}
+
+    /* ── Search/sort bar ── */
+    .toolbar{display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;}
+    .search-box{flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border2);border-radius:4px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--surface);color:var(--text);outline:none;transition:border-color 0.15s;}
+    .search-box:focus{border-color:var(--accent2);}
+    .sort-select{padding:8px 12px;border:1px solid var(--border2);border-radius:4px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--surface);color:var(--text);cursor:pointer;outline:none;}
+
+    /* ── Seller cards ── */
+    .sellers-grid{display:flex;flex-direction:column;gap:12px;}
+    .seller-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:box-shadow 0.15s;}
+    .seller-card:hover{box-shadow:0 2px 12px rgba(0,0,0,0.08);}
+    .seller-header{display:flex;align-items:center;gap:14px;padding:16px 20px;cursor:pointer;user-select:none;}
+    .seller-rank{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);width:24px;flex-shrink:0;text-align:center;}
+    .seller-rank.top{color:var(--accent);font-weight:700;}
+    .seller-avatar{width:36px;height:36px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;color:#fff;font-family:'DM Serif Display',serif;font-size:16px;flex-shrink:0;}
+    .seller-info{flex:1;min-width:0;}
+    .seller-name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .seller-name a{color:var(--accent2);text-decoration:none;}
+    .seller-name a:hover{text-decoration:underline;}
+    .seller-meta{font-size:11px;color:var(--muted);margin-top:1px;}
+    .seller-metrics{display:flex;gap:24px;align-items:center;flex-shrink:0;}
+    .metric{text-align:right;}
+    .metric-val{font-family:'DM Mono',monospace;font-size:14px;font-weight:500;}
+    .metric-val.spent{color:var(--accent2);}
+    .metric-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;}
+    .expand-icon{font-size:12px;color:var(--muted);margin-left:8px;transition:transform 0.2s;flex-shrink:0;}
+    .seller-card.expanded .expand-icon{transform:rotate(180deg);}
+
+    /* ── Bar chart inside card ── */
+    .spend-bar-wrap{padding:0 20px 4px 58px;}
+    .spend-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+    .spend-bar-fill{height:100%;background:var(--accent2);border-radius:2px;transition:width 0.4s ease;}
+
+    /* ── Expanded order list ── */
+    .seller-orders{display:none;border-top:1px solid var(--border);padding:0;}
+    .seller-card.expanded .seller-orders{display:block;}
+    .orders-table{width:100%;border-collapse:collapse;font-size:12px;}
+    .orders-table th{padding:8px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);background:var(--surface2);}
+    .orders-table td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    .orders-table tr:last-child td{border-bottom:none;}
+    .orders-table tr:hover td{background:var(--surface2);}
+    .item-title{max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+    .status-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;}
+    .status-badge.delivered{background:#edfaf3;color:var(--green);}
+    .status-badge.transit{background:#eef4ff;color:var(--accent2);}
+    .status-badge.pending{background:#f8f8f8;color:var(--muted);}
+    .price-cell{font-family:'DM Mono',monospace;font-size:12px;color:var(--text2);}
+    .date-cell{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);}
+
+    /* ── Empty/loading ── */
+    .empty{text-align:center;padding:60px 20px;color:var(--muted);}
+    .empty-icon{font-size:40px;margin-bottom:12px;}
+    .empty h3{font-size:16px;color:var(--text2);margin-bottom:6px;}
+    .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-overlay{text-align:center;padding:40px;color:var(--muted);}
+    .big-spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent2);border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 12px;}
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <h1>Order<em>Radar</em> <span>/ Top Sellers</span></h1>
+  </div>
+  <a href="/" class="nav-link">← Back to Orders</a>
+</div>
+
+<div class="main">
+  <div class="page-title">
+    <div>
+      <h2>Top <em>Sellers</em></h2>
+      <div class="subtitle" id="dateRangeLabel">Select a timeframe to load</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;" id="timeframeBtns">
+        <button class="tf-btn" onclick="setTimeframe(0,  'Today')">Today</button>
+        <button class="tf-btn" onclick="setTimeframe(7,  'Last 7 days')">7d</button>
+        <button class="tf-btn" onclick="setTimeframe(14, 'Last 14 days')">14d</button>
+        <button class="tf-btn" onclick="setTimeframe(30, 'Last 30 days')">30d</button>
+        <button class="tf-btn" onclick="setTimeframe(60, 'Last 60 days')">60d</button>
+        <button class="tf-btn active" onclick="setTimeframe(90, 'Last 90 days')">90d</button>
+      </div>
+      <button class="sync-btn" id="syncBtn" onclick="loadSellers()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div class="alert" id="alert"></div>
+
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card"><div class="stat-label">Unique Sellers</div><div class="stat-value accent" id="statSellers">—</div></div>
+    <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value" id="statOrders">—</div></div>
+    <div class="stat-card"><div class="stat-label">Total Items</div><div class="stat-value" id="statQty">—</div></div>
+    <div class="stat-card"><div class="stat-label">Total Spent</div><div class="stat-value accent" id="statSpent">—</div></div>
+    <div class="stat-card"><div class="stat-label">Avg per Seller</div><div class="stat-value" id="statAvg">—</div></div>
+    <div class="stat-card"><div class="stat-label">Top Seller</div><div class="stat-value red" id="statTop" style="font-size:14px;margin-top:4px;">—</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search-box" id="searchBox" placeholder="Search sellers…" oninput="renderSellers()">
+    <select class="sort-select" id="sortSelect" onchange="renderSellers()">
+      <option value="spent">Sort by Total Spent</option>
+      <option value="orders">Sort by Order Count</option>
+      <option value="recent">Sort by Most Recent</option>
+      <option value="name">Sort by Name</option>
+    </select>
+  </div>
+
+  <div id="sellersContainer">
+    <div class="empty">
+      <div class="empty-icon">🏪</div>
+      <h3>No data yet</h3>
+      <p>Click "Load Sellers" to fetch your last 90 days of orders</p>
+    </div>
+  </div>
+</div>
+
+<script>
+let sellersData = [];
+let maxSpent = 0;
+let currentDays = 90;
+let currentLabel = 'Last 90 days';
+
+function setTimeframe(days, label) {
+  currentDays = days;
+  currentLabel = label;
+  // Update active button
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  loadSellers();
+}
+
+function showAlert(type, msg) {
+  const el = document.getElementById('alert');
+  el.className = 'alert ' + type;
+  el.textContent = msg;
+  if (type !== 'error') setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+async function loadSellers() {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Loading…';
+
+  const container = document.getElementById('sellersContainer');
+  container.innerHTML = '<div class="loading-overlay"><div class="big-spinner"></div><p>Fetching orders…</p></div>';
+
+  try {
+    const to = new Date();
+    const from = new Date();
+    if (currentDays === 0) {
+      // Today only
+      from.setHours(0, 0, 0, 0);
+    } else {
+      from.setDate(from.getDate() - currentDays);
+    }
+
+    const res = await fetch(`/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    // Also load saved tracking statuses
+    let savedStatuses = {};
+    try {
+      const sr = await fetch('/api/tracking-statuses');
+      savedStatuses = await sr.json();
+    } catch {}
+
+    // Group by seller
+    const sellerMap = {};
+    for (const o of data.orders) {
+      const seller = o.seller || o.items?.[0]?.seller || 'Unknown';
+      if (!sellerMap[seller]) {
+        sellerMap[seller] = { name: seller, orders: [], totalSpent: 0, orderCount: 0, lastDate: null, firstDate: null };
+      }
+      const s = sellerMap[seller];
+      const trackingNumber = o.tracking?.[0]?.trackingNumber || '';
+      const savedStatus = savedStatuses[trackingNumber]?.status || null;
+      s.orders.push({
+        orderId: o.extendedOrderId || o.orderId,
+        item: o.items?.map(i => i.title).join(' + ') || '—',
+        price: o.totalAmount || 0,
+        currency: o.currency || 'USD',
+        date: o.createdDate,
+        status: savedStatus || o.deliveryStatus || 'pending',
+        quantity: o.totalQuantity || o.items?.reduce((s,i) => s + (i.quantity||1), 0) || 1,
+      });
+      s.totalSpent += o.totalAmount || 0;
+      s.orderCount++;
+      s.totalQty = (s.totalQty || 0) + (o.totalQuantity || 1);
+      const d = new Date(o.createdDate);
+      if (!s.lastDate || d > new Date(s.lastDate)) s.lastDate = o.createdDate;
+      if (!s.firstDate || d < new Date(s.firstDate)) s.firstDate = o.createdDate;
+    }
+
+    sellersData = Object.values(sellerMap);
+    maxSpent = Math.max(...sellersData.map(s => s.totalSpent), 1);
+
+    // Update stats
+    const totalSpent = sellersData.reduce((s, x) => s + x.totalSpent, 0);
+    const totalOrders = sellersData.reduce((s, x) => s + x.orderCount, 0);
+    const totalQty = sellersData.reduce((s, x) => s + (x.totalQty || 0), 0);
+    document.getElementById('statSellers').textContent = sellersData.length;
+    document.getElementById('statOrders').textContent = totalOrders;
+    document.getElementById('statQty').textContent = totalQty;
+    document.getElementById('statSpent').textContent = '$' + totalSpent.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('statAvg').textContent = '$' + (totalSpent / (sellersData.length || 1)).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    const topSeller = [...sellersData].sort((a,b) => b.totalSpent - a.totalSpent)[0];
+    document.getElementById('statTop').textContent = topSeller?.name || '—';
+
+    // Update date label
+    const fmt = d => new Date(d).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    document.getElementById('dateRangeLabel').textContent = `${currentLabel}: ${fmt(from)} – ${fmt(to)} · ${data.orders.length} orders from ${sellersData.length} sellers`;
+
+    renderSellers();
+    showAlert('success', `✓ Loaded ${data.orders.length} orders from ${sellersData.length} sellers`);
+  } catch(err) {
+    showAlert('error', `✗ ${err.message}`);
+    container.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><h3>Error loading data</h3><p>' + err.message + '</p></div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Refresh';
+  }
+}
+
+function getAvatarColor(name) {
+  const colors = ['#1a56a0','#c84b2f','#1a7a4a','#7c3aed','#b45309','#0891b2','#be185d'];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
+  return colors[Math.abs(h) % colors.length];
+}
+
+function renderSellers() {
+  const q = document.getElementById('searchBox').value.toLowerCase();
+  const sort = document.getElementById('sortSelect').value;
+
+  let filtered = sellersData.filter(s => s.name.toLowerCase().includes(q));
+
+  filtered.sort((a, b) => {
+    if (sort === 'spent')  return b.totalSpent - a.totalSpent;
+    if (sort === 'orders') return b.orderCount - a.orderCount;
+    if (sort === 'recent') return new Date(b.lastDate) - new Date(a.lastDate);
+    if (sort === 'name')   return a.name.localeCompare(b.name);
+    return 0;
+  });
+
+  const container = document.getElementById('sellersContainer');
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><h3>No sellers found</h3><p>Try a different search</p></div>';
+    return;
+  }
+
+  const html = filtered.map((s, i) => {
+    const rank = i + 1;
+    const barPct = Math.round((s.totalSpent / maxSpent) * 100);
+    const avatarColor = getAvatarColor(s.name);
+    const initial = s.name[0].toUpperCase();
+    const firstDate = s.firstDate ? new Date(s.firstDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—';
+    const lastDate  = s.lastDate  ? new Date(s.lastDate).toLocaleDateString('en-US',  {month:'short', day:'numeric', year:'numeric'}) : '—';
+
+    const ordersHtml = s.orders
+      .sort((a,b) => new Date(b.date) - new Date(a.date))
+      .map(o => {
+        const d = o.date ? new Date(o.date) : null;
+        const dateStr = d ? d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—';
+        const timeStr = d ? d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) : '';
+        const statusCls = o.status === 'delivered' ? 'delivered' : o.status === 'transit' ? 'transit' : 'pending';
+        const statusLabel = o.status === 'delivered' ? 'Delivered' : o.status === 'transit' ? 'In Transit' : 'Pending';
+        const ebayUrl = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(o.orderId)}`;
+        return `<tr>
+          <td class="date-cell">${dateStr}<br><span style="color:var(--muted);font-size:10px;">${timeStr}</span></td>
+          <td class="item-title"><a href="${ebayUrl}" target="_blank" style="color:var(--accent2);text-decoration:none;" title="${o.item}">${o.item}</a></td>
+          <td style="text-align:center;font-family:'DM Mono',monospace;font-size:12px;">${o.quantity > 1 ? `<span style="background:#f0f4ff;color:var(--accent2);padding:1px 7px;border-radius:10px;font-size:11px;">x${o.quantity}</span>` : o.quantity}</td>
+          <td><span class="status-badge ${statusCls}">${statusLabel}</span></td>
+          <td class="price-cell" style="text-align:right;">$${o.price.toFixed(2)}</td>
+        </tr>`;
+      }).join('');
+
+    return `
+    <div class="seller-card" id="card_${i}">
+      <div class="seller-header" onclick="toggleCard(${i})">
+        <div class="seller-rank ${rank <= 3 ? 'top' : ''}">#${rank}</div>
+        <div class="seller-avatar" style="background:${avatarColor}">${initial}</div>
+        <div class="seller-info">
+          <div class="seller-name">
+            <a href="https://www.ebay.com/usr/${encodeURIComponent(s.name)}" target="_blank" onclick="event.stopPropagation()">${s.name}</a>
+          </div>
+          <div class="seller-meta">${s.orderCount} order${s.orderCount !== 1 ? 's' : ''} · ${firstDate} – ${lastDate}</div>
+        </div>
+        <div class="seller-metrics">
+          <div class="metric">
+            <div class="metric-val spent">$${s.totalSpent.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+            <div class="metric-label">Total Spent</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">${s.orderCount}</div>
+            <div class="metric-label">Orders</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">${s.totalQty || s.orderCount}</div>
+            <div class="metric-label">Items</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">$${(s.totalSpent / s.orderCount).toFixed(2)}</div>
+            <div class="metric-label">Avg Order</div>
+          </div>
+        </div>
+        <div class="expand-icon">▼</div>
+      </div>
+      <div class="spend-bar-wrap">
+        <div class="spend-bar"><div class="spend-bar-fill" style="width:${barPct}%"></div></div>
+      </div>
+      <div class="seller-orders">
+        <table class="orders-table">
+          <thead><tr><th>Date / Time</th><th>Item</th><th style="text-align:center">Qty</th><th>Status</th><th style="text-align:right">Price</th></tr></thead>
+          <tbody>${ordersHtml}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="sellers-grid">${html}</div>`;
+}
+
+function toggleCard(i) {
+  const card = document.getElementById('card_' + i);
+  card.classList.toggle('expanded');
+}
+
+// Auto-load with default 90d on page open
+loadSellers();
+</script>
+</body>
+</html>
