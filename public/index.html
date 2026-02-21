@@ -72,7 +72,7 @@
   .setup-panel a{color:var(--accent2);}
   .setup-panel.hidden{display:none;}
 
-  .stats-bar{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:24px;}
+  .stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:24px;}
   @media(max-width:1100px){.stats-bar{grid-template-columns:repeat(3,1fr);}}
   @media(max-width:600px){.stats-bar{grid-template-columns:repeat(2,1fr);}}
   .stat-cell{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;box-shadow:var(--shadow);transition:box-shadow 0.2s,transform 0.15s;}
@@ -133,6 +133,7 @@
   .status.transit{color:#92400e;background:#fef3c7;}
   .status.label{color:#5b21b6;background:#ede9fe;}
   .status.pending{color:var(--muted);background:var(--surface2);border:1px solid var(--border);}
+  .delivered-date{font-size:10px;color:var(--delivered);margin-top:3px;font-family:'DM Mono',monospace;opacity:0.8;}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
   .status.transit::before{animation:pulse 1.8s infinite;}
 
@@ -184,8 +185,7 @@
         </div>
         <div class="cal-grid" id="calGrid"></div>
         <div class="cal-actions">
-          <button class="cal-action-btn secondary" onclick="clearCalFilter()">Clear</button>
-          <button class="cal-action-btn primary" onclick="applyCalFilter()">Apply</button>
+          <button class="cal-action-btn secondary" onclick="clearCalFilter()">✕ Clear filter</button>
         </div>
       </div>
     </div>
@@ -221,8 +221,7 @@
     <div class="stat-cell"><div class="stat-label">Total Orders</div><div class="stat-value v-default" id="statTotal">—</div></div>
     <div class="stat-cell clickable" id="scDelivered" onclick="toggleStatFilter('delivered','scDelivered')"><div class="stat-label">Delivered</div><div class="stat-value v-delivered" id="statDelivered">—</div></div>
     <div class="stat-cell clickable" id="scTransit" onclick="toggleStatFilter('transit','scTransit')"><div class="stat-label">In Transit</div><div class="stat-value v-transit" id="statTransit">—</div></div>
-    <div class="stat-cell clickable" id="scLabel" onclick="toggleStatFilter('label','scLabel')"><div class="stat-label">Label Only</div><div class="stat-value v-label" id="statLabel">—</div></div>
-    <div class="stat-cell clickable" id="scPending" onclick="toggleStatFilter('pending','scPending')"><div class="stat-label">Pending Ship</div><div class="stat-value v-muted" id="statPending">—</div></div>
+    <div class="stat-cell clickable" id="scPending" onclick="toggleStatFilter('pending','scPending')"><div class="stat-label">Pending</div><div class="stat-value v-muted" id="statPending">—</div></div>
     <div class="stat-cell"><div class="stat-label">Total Spent</div><div class="stat-value v-accent" id="statSpent">—</div></div>
   </div>
 
@@ -231,7 +230,6 @@
     <button class="filter-btn active" id="fbAll" onclick="setFilter('all',this)">All Orders</button>
     <button class="filter-btn" id="fbDelivered" onclick="setFilter('delivered',this)">Delivered</button>
     <button class="filter-btn" id="fbTransit" onclick="setFilter('transit',this)">In Transit</button>
-    <button class="filter-btn" id="fbLabel" onclick="setFilter('label',this)">Label Only</button>
     <button class="filter-btn" id="fbPending" onclick="setFilter('pending',this)">Pending</button>
     <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
   </div>
@@ -291,7 +289,7 @@ let sortKey = 'date', sortDir = -1;
 let currentPage = 1, pageSize = 9999;
 let calFilterDate = null, calSelectedDate = null;
 let calViewYear, calViewMonth;
-const statusLabels = {delivered:'Delivered',transit:'In Transit',label:'Label Created',pending:'Pending'};
+const statusLabels = {delivered:'Delivered',transit:'In Transit',pending:'Pending',out_for_delivery:'Out for Delivery'};
 const today = new Date();
 const todayStr = today.toDateString();
 
@@ -339,7 +337,7 @@ function renderCal() {
     const isSel = calSelectedDate && thisDate.toDateString() === calSelectedDate.toDateString();
     el.className = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'') + (isSel?' selected':'');
     el.textContent = d;
-    if (!isFuture) el.onclick = () => { calSelectedDate = new Date(calViewYear, calViewMonth, d); renderCal(); };
+    if (!isFuture) el.onclick = () => { calSelectedDate = new Date(calViewYear, calViewMonth, d); applyCalFilter(); };
     grid.appendChild(el);
   }
 }
@@ -418,6 +416,7 @@ async function fetchOrders() {
         confirmedStatus: null,
         date: o.createdDate,
         dateObj: o.createdDate ? new Date(o.createdDate) : null,
+        actualDeliveryTime: o.actualDeliveryTime || null,
         price: o.totalAmount,
         currency: o.currency,
       }));
@@ -437,7 +436,6 @@ function recomputeStats() {
   document.getElementById('statTotal').textContent = allOrders.length;
   animateNum('statDelivered', allOrders.filter(o=>eff(o)==='delivered').length);
   animateNum('statTransit',   allOrders.filter(o=>eff(o)==='transit').length);
-  animateNum('statLabel',     allOrders.filter(o=>eff(o)==='label').length);
   animateNum('statPending',   allOrders.filter(o=>eff(o)==='pending').length);
   document.getElementById('statSpent').textContent =
     '$' + allOrders.reduce((s,o)=>s+o.price,0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -471,7 +469,7 @@ function setFilter(f, btn) {
 function setFilterDirect(f) {
   currentFilter = f; currentPage = 1;
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
-  const map={all:'fbAll',delivered:'fbDelivered',transit:'fbTransit',label:'fbLabel',pending:'fbPending'};
+  const map={all:'fbAll',delivered:'fbDelivered',transit:'fbTransit',pending:'fbPending'};
   document.getElementById(map[f])?.classList.add('active');
   renderTable();
 }
@@ -554,7 +552,12 @@ function renderTable() {
       <td>${sellerHtml}</td>
       <td>${carrierHtml}</td>
       <td>${trackingHtml}</td>
-      <td id="statusCell_${globalIdx}"><span class="status ${eff}">${statusLabels[eff]||eff}</span></td>
+      <td id="statusCell_${globalIdx}">
+        <span class="status ${eff}">${statusLabels[eff]||eff}</span>
+        ${eff==='delivered' && o.actualDeliveryTime
+          ? `<div class="delivered-date">📦 ${new Date(o.actualDeliveryTime).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>`
+          : ''}
+      </td>
       <td><span class="no-val">${dateStr}</span></td>
       <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
     </tr>`;

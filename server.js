@@ -138,26 +138,31 @@ async function getAllOrders(daysBack, fromDateStr, toDateStr) {
 }
 
 function getDeliveryStatus(order, transactions, allTracking) {
-  const hasTrackingNumber = allTracking.some(t => t.trackingNumber && t.trackingNumber.length > 4);
-  const hasShippedTime = !!(order.ShippedTime);
+  // Simple 3-state logic matching what eBay purchase history shows:
+  //   delivered  → eBay ActualDeliveryTime is set, OR ShippingStatus === "Delivered"
+  //   transit    → tracking number exists (package is on the way)
+  //   pending    → paid but no tracking number yet
 
-  // Only trust explicit "Delivered" status from eBay — never infer it
+  const hasTrackingNumber = allTracking.some(t => t.trackingNumber && t.trackingNumber.length > 4);
+
+  // 1. Check for actual delivery confirmation from eBay
+  //    ActualDeliveryTime is only populated once the carrier confirms delivery
+  if (order.ActualDeliveryTime) return 'delivered';
+
+  // 2. Check explicit ShippingStatus = Delivered at transaction or order level
   for (const tx of transactions) {
     const s = tx.ShippingDetails && tx.ShippingDetails.ShippingStatus;
     if (s === 'Delivered') return 'delivered';
-    if (s === 'Shipped' || s === 'InTransit') return 'transit';
   }
   const orderShipStatus = order.ShippingDetails
     && order.ShippingDetails.ShippingServiceSelected
     && order.ShippingDetails.ShippingServiceSelected.ShippingStatus;
   if (orderShipStatus === 'Delivered') return 'delivered';
-  if (orderShipStatus === 'Shipped' || orderShipStatus === 'InTransit') return 'transit';
 
-  // Heuristics: tracking + shipped time = in transit (NOT delivered)
-  // We never guess "delivered" — that requires explicit carrier confirmation
-  if (hasTrackingNumber && hasShippedTime) return 'transit';
-  if (hasTrackingNumber && !hasShippedTime) return 'label';
-  if (hasShippedTime && !hasTrackingNumber) return 'transit';
+  // 3. Tracking exists = in transit (label created + shipped, en route)
+  if (hasTrackingNumber) return 'transit';
+
+  // 4. No tracking = still pending / not yet shipped
   return 'pending';
 }
 
@@ -228,6 +233,7 @@ function parseOrder(order) {
     seller,
     paidTime: order.PaidTime || null,
     shippedTime: order.ShippedTime || null,
+    actualDeliveryTime: order.ActualDeliveryTime || null,
   };
 }
 
@@ -330,7 +336,7 @@ app.get('/api/orders', async (req, res) => {
       total: orders.length,
       delivered: orders.filter(o => o.deliveryStatus === 'delivered').length,
       transit: orders.filter(o => o.deliveryStatus === 'transit').length,
-      label: orders.filter(o => o.deliveryStatus === 'label').length,
+      label: 0,
       pending: orders.filter(o => o.deliveryStatus === 'pending').length,
       totalSpent: orders.reduce((s, o) => s + o.totalAmount, 0).toFixed(2),
     };
