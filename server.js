@@ -162,74 +162,155 @@ function getDeliveryStatus(order, transactions, allTracking) {
   return 'pending';
 }
 
-// ── Scrape eBay order page delivery info section ────────────────────────────
-// Looks for these labels in the delivery info section:
-//   "Delivered on"  → delivered  (date = delivery date, shown blank in table)
-//   "Arriving by"   → transit    (date = expected delivery date)
-//   "Arrives"       → pending    (date = estimated arrival)
-// Returns { status, deliveryDate } where deliveryDate is the text after the label.
+// ── Check order status via eBay Fulfillment REST API ─────────────────────────
+// The REST API returns lineItemFulfillmentStatus = "FULFILLED" when delivered.
+// This is what eBay's own purchase history page reads — far more reliable than
+// the Trading API fields (ActualDeliveryTime is often null even after delivery).
+//
+// Status rules:
+//   delivered → any lineItem has fulfillmentStatus = "FULFILLED"
+//   transit   → has tracking number but not fulfilled
+//   pending   → no tracking yet
+// Delivery date:
+//   delivered → blank
+//   transit/pending → estimatedDeliveryDate from fulfillment spans
 async function scrapeOrderPageStatus(orderId) {
   if (!EBAY_USER_TOKEN) return null;
 
-  const url = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(orderId)}`;
-
   try {
-    const resp = await axios.get(url, {
-      headers: {
-        'Cookie': `ebay=%5Esbf%3D%23000000%5E; nonsession=BAQAAAXarUsE5AAQAAAAAAAAAAAAAAAAAAAAABI=; s=%7B%22enc%22%3A%22AQAHAAAAEAAAAXarUsE5%22%7D`,
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.ebay.com/mye/myebay/purchase',
-      },
-      timeout: 10000,
-      maxRedirects: 5,
-    });
+    // eBay Fulfillment API v1 — uses same User Token as Bearer auth
+    const restResp = await axios.get(
+      `https://api.ebay.com/sell/fulfillment/v1/order/${encodeURIComponent(orderId)}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${EBAY_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        },
+        timeout: 10000,
+        validateStatus: s => s < 500,
+      }
+    );
 
-    const html = resp.data;
-    console.log('Order', orderId, '→ page length:', html.length);
+    if (restResp.status === 200 && restResp.data) {
+      const order = restResp.data;
+      console.log('Fulfillment API order', orderId, '→ fulfillmentStartInstructions:', JSON.stringify(order.fulfillmentStartInstructions || []).slice(0, 200));
 
-    // Strip HTML tags for clean text matching, collapse whitespace
-    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      // lineItems[].lineItemFulfillmentStatus: "NOT_STARTED" | "IN_PROGRESS" | "FULFILLED"
+      const lineItems = order.lineItems || [];
+      const allFulfilled = lineItems.length > 0 && lineItems.every(li => li.lineItemFulfillmentStatus === 'FULFILLED');
+      const anyFulfilled = lineItems.some(li => li.lineItemFulfillmentStatus === 'FULFILLED');
 
-    // Helper: extract the date string that immediately follows a label.
-    // eBay formats: "Delivered on Jan 15" / "Arriving by Feb 3" / "Arrives Feb 10–14"
-    // We grab up to 30 chars after the keyword and trim.
-    function extractDate(label) {
-      const idx = text.indexOf(label);
-      if (idx === -1) return null;
-      const after = text.slice(idx + label.length, idx + label.length + 40).trim();
-      // Take up to the next sentence-ending punctuation or long gap
-      const dateText = after.split(/[.!?|]{1}/)[0].trim();
-      return dateText || null;
+      // Estimated delivery from fulfillmentStartInstructions
+      let estimatedDelivery = null;
+      const instructions = order.fulfillmentStartInstructions || [];
+      for (const inst of instructions) {
+        const span = inst.maxEstimatedDeliveryDate || inst.minEstimatedDeliveryDate;
+        if (span) {
+          try {
+            const minD = inst.minEstimatedDeliveryDate
+              ? new Date(inst.minEstimatedDeliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+              : null;
+            const maxD = inst.maxEstimatedDeliveryDate
+              ? new Date(inst.maxEstimatedDeliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+              : null;
+            estimatedDelivery = (minD && maxD && minD !== maxD) ? `${minD} – ${maxD}` : (maxD || minD);
+          } catch {}
+          break;
+        }
+      }
+
+      // Also check shipping fulfillments for tracking
+      const fulfillments = order.fulfillments || [];
+      const hasTracking = fulfillments.some(f => f.trackingNumber && f.trackingNumber.length > 4)
+        || lineItems.some(li => li.lineItemFulfillmentStatus !== 'NOT_STARTED');
+
+      if (anyFulfilled) {
+        console.log('Order', orderId, '→ DELIVERED (Fulfillment API)');
+        return { status: 'delivered', deliveryDate: null };
+      }
+      if (hasTracking) {
+        console.log('Order', orderId, '→ TRANSIT, est:', estimatedDelivery);
+        return { status: 'transit', deliveryDate: estimatedDelivery };
+      }
+      console.log('Order', orderId, '→ PENDING, est:', estimatedDelivery);
+      return { status: 'pending', deliveryDate: estimatedDelivery };
     }
 
-    // Check most-specific first: "Delivered on" before "Arrives"
-    if (text.includes('Delivered on')) {
-      const date = extractDate('Delivered on');
-      console.log('Order', orderId, '→ DELIVERED, date:', date);
-      return { status: 'delivered', deliveryDate: null }; // blank for delivered
-    }
-
-    if (text.includes('Arriving by')) {
-      const date = extractDate('Arriving by');
-      console.log('Order', orderId, '→ TRANSIT, arriving by:', date);
-      return { status: 'transit', deliveryDate: date };
-    }
-
-    if (text.includes('Arrives')) {
-      const date = extractDate('Arrives');
-      console.log('Order', orderId, '→ PENDING, arrives:', date);
-      return { status: 'pending', deliveryDate: date };
-    }
-
-    // Nothing found — log snippet for debugging
-    console.log('Order', orderId, '→ no delivery label found');
-    console.log('DEBUG text snippet:', text.slice(0, 800));
-    return { status: null, deliveryDate: null };
+    // Fulfillment API failed (404 = order not found, 401 = auth issue)
+    // Fall back to Trading API GetOrders with OrderID
+    console.log('Fulfillment API returned', restResp.status, 'for order', orderId, '— falling back to Trading API');
+    return await checkStatusViaTradingAPI(orderId);
 
   } catch (err) {
     console.error('scrapeOrderPageStatus error for', orderId, ':', err.message);
+    // Try Trading API fallback
+    return await checkStatusViaTradingAPI(orderId);
+  }
+}
+
+// ── Trading API fallback for order status ─────────────────────────────────────
+async function checkStatusViaTradingAPI(orderId) {
+  try {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetOrdersRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials><eBayAuthToken>${EBAY_USER_TOKEN}</eBayAuthToken></RequesterCredentials>
+  <OrderIDArray><OrderID>${orderId}</OrderID></OrderIDArray>
+  <OrderRole>Buyer</OrderRole>
+  <DetailLevel>ReturnAll</DetailLevel>
+</GetOrdersRequest>`;
+
+    const result = await callEbayAPI('GetOrders', xml);
+    const resp = result.GetOrdersResponse;
+    if (!resp || (resp.Ack !== 'Success' && resp.Ack !== 'Warning')) return null;
+
+    const orderArr = resp.OrderArray && resp.OrderArray.Order;
+    const order = orderArr ? (Array.isArray(orderArr) ? orderArr[0] : orderArr) : null;
+    if (!order) return null;
+
+    const txArray = order.TransactionArray && order.TransactionArray.Transaction;
+    const txs = txArray ? (Array.isArray(txArray) ? txArray : [txArray]) : [];
+
+    // Collect all tracking
+    const allTracking = [];
+    const shipArr = order.ShippingDetails && order.ShippingDetails.ShipmentTrackingDetails;
+    if (shipArr) (Array.isArray(shipArr) ? shipArr : [shipArr]).forEach(t => {
+      if (t.ShipmentTrackingNumber) allTracking.push(t);
+    });
+    txs.forEach(tx => {
+      const tt = tx.ShippingDetails && tx.ShippingDetails.ShipmentTrackingDetails;
+      if (tt) (Array.isArray(tt) ? tt : [tt]).forEach(t => {
+        if (t.ShipmentTrackingNumber && !allTracking.find(x => x.ShipmentTrackingNumber === t.ShipmentTrackingNumber))
+          allTracking.push(t);
+      });
+    });
+    const hasTracking = allTracking.some(t => t.ShipmentTrackingNumber && t.ShipmentTrackingNumber.length > 4);
+
+    // Delivery signals
+    let delivered = false;
+    if (order.ActualDeliveryTime) delivered = true;
+    const oSS = order.ShippingDetails && order.ShippingDetails.ShippingServiceSelected && order.ShippingDetails.ShippingServiceSelected.ShippingStatus;
+    if (oSS === 'Delivered') delivered = true;
+    for (const tx of txs) {
+      if (tx.ShippingDetails && tx.ShippingDetails.ShippingStatus === 'Delivered') delivered = true;
+    }
+
+    // Estimated delivery from ShippingMaxTime/MinTime
+    const svc = order.ShippingDetails && order.ShippingDetails.ShippingServiceSelected;
+    let estimatedDelivery = null;
+    if (svc) {
+      const fmt = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+      const minS = fmt(svc.ShippingMinTime), maxS = fmt(svc.ShippingMaxTime);
+      if (minS && maxS && minS !== maxS) estimatedDelivery = `${minS} – ${maxS}`;
+      else estimatedDelivery = maxS || minS;
+    }
+
+    if (delivered) return { status: 'delivered', deliveryDate: null };
+    if (hasTracking) return { status: 'transit', deliveryDate: estimatedDelivery };
+    return { status: 'pending', deliveryDate: estimatedDelivery };
+
+  } catch (err) {
+    console.error('checkStatusViaTradingAPI error:', err.message);
     return null;
   }
 }
@@ -237,30 +318,30 @@ async function scrapeOrderPageStatus(orderId) {
 // ── Debug endpoint: returns raw HTML snippet around stepper icons ─────────────
 // Call GET /api/debug-order?orderId=XXX to see what eBay actually returns
 async function debugOrderPage(orderId) {
-  const url = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(orderId)}`;
   try {
-    const resp = await axios.get(url, {
-      headers: {
-        'Cookie': `ebay=%5Esbf%3D%23000000%5E; nonsession=BAQAAAXarUsE5AAQAAAAAAAAAAAAAAAAAAAAABI=; s=%7B%22enc%22%3A%22AQAHAAAAEAAAAXarUsE5%22%7D`,
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-      timeout: 10000,
-    });
-    const html = resp.data;
-    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-    const deliveredIdx = text.indexOf('Delivered on');
-    const arrivingIdx = text.indexOf('Arriving by');
-    const arrivesIdx  = text.indexOf('Arrives');
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetOrdersRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials><eBayAuthToken>${EBAY_USER_TOKEN}</eBayAuthToken></RequesterCredentials>
+  <OrderIDArray><OrderID>${orderId}</OrderID></OrderIDArray>
+  <OrderRole>Buyer</OrderRole>
+  <DetailLevel>ReturnAll</DetailLevel>
+</GetOrdersRequest>`;
+    const result = await callEbayAPI('GetOrders', xml);
+    const resp = result.GetOrdersResponse;
+    const orderArr = resp && resp.OrderArray && resp.OrderArray.Order;
+    const order = orderArr ? (Array.isArray(orderArr) ? orderArr[0] : orderArr) : null;
     return {
-      totalLength: html.length,
-      hasDeliveredOn:  deliveredIdx >= 0,
-      hasArrivingBy:   arrivingIdx >= 0,
-      hasArrives:      arrivesIdx >= 0,
-      deliveredOnSnippet: deliveredIdx >= 0 ? text.slice(deliveredIdx, deliveredIdx + 60) : null,
-      arrivingBySnippet:  arrivingIdx >= 0 ? text.slice(arrivingIdx, arrivingIdx + 60) : null,
-      arrivesSnippet:     arrivesIdx >= 0  ? text.slice(arrivesIdx,  arrivesIdx + 60)  : null,
-      textFirst800: text.slice(0, 800),
+      ack: resp && resp.Ack,
+      orderStatus: order && order.OrderStatus,
+      shippedTime: order && order.ShippedTime,
+      actualDeliveryTime: order && order.ActualDeliveryTime,
+      checkoutStatus: order && order.CheckoutStatus,
+      shippingDetails: order && order.ShippingDetails && order.ShippingDetails.ShippingServiceSelected,
+      trackingCount: (() => {
+        if (!order) return 0;
+        const s = order.ShippingDetails && order.ShippingDetails.ShipmentTrackingDetails;
+        return s ? (Array.isArray(s) ? s.length : 1) : 0;
+      })(),
     };
   } catch(err) {
     return { error: err.message };
