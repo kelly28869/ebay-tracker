@@ -502,7 +502,7 @@ async function scrapeCarrierStatus(carrier, trackingNumber) {
       }
     );
     const data = resp.data;
-    console.log('USPS tracking response for', trackingNumber, ':', JSON.stringify(data).slice(0, 600));
+    console.log('USPS tracking FULL response for', trackingNumber, ':', JSON.stringify(data));
 
     const eventType = (data.eventType || '').toUpperCase();
     const category  = (data.statusCategory || '').toUpperCase();
