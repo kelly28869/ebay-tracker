@@ -9,7 +9,6 @@ const crypto = require('crypto');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 const EBAY_API_URL = 'https://api.ebay.com/ws/api.dll';
 const {
@@ -17,11 +16,59 @@ const {
   EBAY_DEV_ID,
   EBAY_CERT_ID,
   EBAY_USER_TOKEN,
+  DASHBOARD_USERNAME = 'admin',
+  DASHBOARD_PASSWORD,
   PORT = 3000
 } = process.env;
 
 const EBAY_VERIFICATION_TOKEN = '7ab45f03b81598d67a1a5893a79e82de03914e64b8ada9f3fc23524b23aedba2';
 const ENDPOINT_URL = 'https://ebay-tracker.onrender.com/ebay/account-deletion';
+
+// ── Password Protection (Basic Auth) ────────────────────────────────────────
+// Protects ALL routes except the eBay account-deletion webhook
+function requireAuth(req, res, next) {
+  // Skip auth for eBay's webhook — it needs to be publicly accessible
+  if (req.path === '/ebay/account-deletion') return next();
+
+  // If no password is set in .env, warn but allow access (for local dev)
+  if (!DASHBOARD_PASSWORD) {
+    console.warn('WARNING: DASHBOARD_PASSWORD not set — dashboard is unprotected!');
+    return next();
+  }
+
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    res.set('WWW-Authenticate', 'Basic realm="OrderRadar Dashboard"');
+    return res.status(401).send('Authentication required');
+  }
+
+  const base64 = authHeader.slice(6);
+  const decoded = Buffer.from(base64, 'base64').toString('utf8');
+  const [username, ...rest] = decoded.split(':');
+  const password = rest.join(':'); // handles passwords with colons
+
+  const validUser = crypto.timingSafeEqual(
+    Buffer.from(username || ''),
+    Buffer.from(DASHBOARD_USERNAME)
+  );
+  const validPass = crypto.timingSafeEqual(
+    Buffer.from(password || ''),
+    Buffer.from(DASHBOARD_PASSWORD)
+  );
+
+  if (validUser && validPass) {
+    return next();
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="OrderRadar Dashboard"');
+  return res.status(401).send('Invalid username or password');
+}
+
+// Apply auth to all routes
+app.use(requireAuth);
+
+// Serve static files (the dashboard HTML)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ── eBay API call ────────────────────────────────────────────────────────────
 async function callEbayAPI(callName, bodyXml) {
@@ -58,7 +105,7 @@ async function fetchPage(createTimeFrom, createTimeTo, page) {
   return await callEbayAPI('GetOrders', xml);
 }
 
-// ── Fetch ALL orders (handles pagination automatically) ──────────────────────
+// ── Fetch ALL orders across all pages ───────────────────────────────────────
 async function getAllOrders(daysBack) {
   const now = new Date();
   const from = new Date(now);
@@ -66,12 +113,10 @@ async function getAllOrders(daysBack) {
   const createTimeFrom = from.toISOString();
   const createTimeTo = now.toISOString();
 
-  // Page 1 first — gives us total page count
   const page1Result = await fetchPage(createTimeFrom, createTimeTo, 1);
   const resp1 = page1Result.GetOrdersResponse;
 
   if (!resp1) throw new Error('Invalid eBay API response');
-
   const ack = resp1.Ack;
   if (ack !== 'Success' && ack !== 'Warning') {
     const errors = resp1.Errors;
@@ -85,7 +130,6 @@ async function getAllOrders(daysBack) {
   const totalEntries = parseInt((resp1.PaginationResult && resp1.PaginationResult.TotalNumberOfEntries) || '0', 10);
   console.log('eBay: ' + totalEntries + ' orders across ' + totalPages + ' pages');
 
-  // Collect page 1 orders
   const allRaw = [];
   const p1orders = resp1.OrderArray && resp1.OrderArray.Order;
   if (p1orders) {
@@ -93,11 +137,9 @@ async function getAllOrders(daysBack) {
     allRaw.push(...arr);
   }
 
-  // Fetch remaining pages in parallel batches of 5
   if (totalPages > 1) {
     const remaining = [];
     for (let p = 2; p <= totalPages; p++) remaining.push(p);
-
     while (remaining.length > 0) {
       const batch = remaining.splice(0, 5);
       const results = await Promise.all(batch.map(p => fetchPage(createTimeFrom, createTimeTo, p)));
@@ -117,55 +159,37 @@ async function getAllOrders(daysBack) {
 }
 
 // ── Determine real delivery status ───────────────────────────────────────────
-// eBay's OrderStatus="Completed" just means PAYMENT is done, NOT delivery.
-// We use actual shipping fields to determine the real status.
 function getDeliveryStatus(order, transactions, allTracking) {
   const hasTrackingNumber = allTracking.some(t => t.trackingNumber && t.trackingNumber.length > 4);
   const hasShippedTime = !!(order.ShippedTime);
 
-  // 1. Check transaction-level shipping status (most accurate when present)
+  // 1. Transaction-level shipping status (most accurate)
   for (const tx of transactions) {
     const txShipStatus = tx.ShippingDetails && tx.ShippingDetails.ShippingStatus;
     if (txShipStatus === 'Delivered') return 'delivered';
-    if (txShipStatus === 'Shipped' || txShipStatus === 'InTransit') {
-      // Has a real tracking number = in transit; no tracking = shipped without tracking
-      return hasTrackingNumber ? 'transit' : 'transit';
-    }
+    if (txShipStatus === 'Shipped' || txShipStatus === 'InTransit') return 'transit';
   }
 
-  // 2. Check order-level shipping status
+  // 2. Order-level shipping status
   const orderShipStatus = order.ShippingDetails
     && order.ShippingDetails.ShippingServiceSelected
     && order.ShippingDetails.ShippingServiceSelected.ShippingStatus;
   if (orderShipStatus === 'Delivered') return 'delivered';
   if (orderShipStatus === 'Shipped' || orderShipStatus === 'InTransit') return 'transit';
 
-  // 3. Fall back to tracking + ShippedTime heuristics
-  if (hasTrackingNumber && hasShippedTime) {
-    // Has tracking AND seller marked shipped — genuinely in transit
-    return 'transit';
-  }
+  // 3. Heuristics from tracking + shipped time
+  if (hasTrackingNumber && hasShippedTime) return 'transit';
+  if (hasTrackingNumber && !hasShippedTime) return 'label';
+  if (hasShippedTime && !hasTrackingNumber) return 'transit';
 
-  if (hasTrackingNumber && !hasShippedTime) {
-    // Tracking number exists but seller hasn't marked shipped — label only
-    return 'label';
-  }
-
-  if (hasShippedTime && !hasTrackingNumber) {
-    // Marked shipped but no tracking (e.g. letter mail) — treat as transit
-    return 'transit';
-  }
-
-  // 4. Nothing shipped yet
   return 'pending';
 }
 
-// ── Parse a raw eBay order object ────────────────────────────────────────────
+// ── Parse a raw eBay order ───────────────────────────────────────────────────
 function parseOrder(order) {
   const txArray = order.TransactionArray && order.TransactionArray.Transaction;
   const transactions = txArray ? (Array.isArray(txArray) ? txArray : [txArray]) : [];
 
-  // Collect tracking from order-level ShippingDetails
   const allTracking = [];
   const shipmentArray = order.ShippingDetails && order.ShippingDetails.ShipmentTrackingDetails;
   const trackingEntries = shipmentArray ? (Array.isArray(shipmentArray) ? shipmentArray : [shipmentArray]) : [];
@@ -175,7 +199,6 @@ function parseOrder(order) {
     }
   });
 
-  // Also collect from transaction-level ShippingDetails
   transactions.forEach(tx => {
     const txTracking = tx.ShippingDetails && tx.ShippingDetails.ShipmentTrackingDetails;
     if (txTracking) {
@@ -203,8 +226,8 @@ function parseOrder(order) {
     extendedOrderId: order.ExtendedOrderID || order.OrderID || '',
     createdDate: order.CreatedTime || '',
     orderStatus: order.OrderStatus || '',
-    deliveryStatus: deliveryStatus,
-    items: items,
+    deliveryStatus,
+    items,
     tracking: allTracking,
     totalAmount: parseFloat((totalRaw && totalRaw._) || totalRaw || '0'),
     currency: (totalRaw && totalRaw.$ && totalRaw.$.currencyID) || 'USD',
@@ -259,6 +282,7 @@ app.get('/api/tracking-url', (req, res) => {
   res.json({ url });
 });
 
+// eBay webhook — no auth required
 app.get('/ebay/account-deletion', (req, res) => {
   const challengeCode = req.query.challenge_code;
   const hash = crypto.createHash('sha256')
@@ -277,5 +301,11 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log('\neBay Order Tracker running at http://localhost:' + PORT + '\n');
+  console.log('\neBay Order Tracker running at http://localhost:' + PORT);
+  if (!DASHBOARD_PASSWORD) {
+    console.log('WARNING: Set DASHBOARD_PASSWORD in your .env to protect the dashboard!');
+  } else {
+    console.log('Dashboard is password protected.');
+  }
+  console.log('');
 });
