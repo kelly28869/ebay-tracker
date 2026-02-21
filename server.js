@@ -668,15 +668,14 @@ app.get('/api/check-tracking', async (req, res) => {
 });
 
 // ── Get all saved tracking statuses ──────────────────────────────────────────
-// Called on every sync so the frontend can auto-apply known statuses
+app.get('/api/tracking-statuses', (req, res) => {
+  res.json(trackingStatusStore);
+});
+
 app.delete('/api/tracking-statuses', (req, res) => {
   trackingStatusStore = {};
   saveStatusStore(trackingStatusStore);
   res.json({ ok: true, cleared: true });
-});
-
-
-  res.json(trackingStatusStore);
 });
 
 // ── Manually save a tracking status (called from frontend after manual confirm) 
