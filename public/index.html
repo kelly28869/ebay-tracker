@@ -7,315 +7,159 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f0f0f0;
-    --surface: #ffffff;
-    --surface2: #f8f8f8;
-    --border: #e0e0e0;
-    --border2: #cccccc;
-    --accent: #c84b2f;
-    --accent2: #1a56a0;
-    --text: #111111;
-    --text2: #444444;
-    --muted: #888888;
-    --delivered: #1a7a4a;
-    --transit: #b45d0a;
-    --label-c: #7c3aab;
-    --shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.04);
-    --shadow-lg: 0 2px 8px rgba(0,0,0,0.1), 0 8px 24px rgba(0,0,0,0.07);
+    --bg:#f0f0f0; --surface:#fff; --surface2:#f8f8f8; --border:#e0e0e0; --border2:#ccc;
+    --accent:#c84b2f; --accent2:#1a56a0; --text:#111; --text2:#444; --muted:#888;
+    --delivered:#1a7a4a; --transit:#b45d0a; --label-c:#7c3aab;
+    --shadow:0 1px 4px rgba(0,0,0,0.07),0 4px 16px rgba(0,0,0,0.04);
+    --shadow-lg:0 2px 8px rgba(0,0,0,0.1),0 8px 24px rgba(0,0,0,0.07);
   }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;font-size:14px;line-height:1.5;}
+  .container{max-width:1500px;margin:0 auto;padding:0 32px;}
 
-  * { margin:0; padding:0; box-sizing:border-box; }
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:20px 32px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;position:sticky;top:0;z-index:200;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+  .logo h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;letter-spacing:-0.5px;}
+  .logo h1 em{font-style:italic;color:var(--accent);}
+  .logo p{font-size:11px;color:var(--muted);margin-top:1px;}
+  .header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    min-height: 100vh;
-    font-size: 14px;
-    line-height: 1.5;
-  }
+  /* ── CALENDAR BUTTON ── */
+  .cal-wrap{position:relative;}
+  .cal-btn{font-family:'DM Mono',monospace;font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border2);padding:8px 14px;border-radius:4px;cursor:pointer;user-select:none;transition:all 0.15s;white-space:nowrap;display:flex;align-items:center;gap:6px;}
+  .cal-btn:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  .cal-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
 
-  .container { max-width: 1500px; margin: 0 auto; padding: 0 32px; }
+  /* ── CALENDAR POPUP ── */
+  .cal-popup{display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:var(--shadow-lg);padding:16px;z-index:999;min-width:284px;}
+  .cal-popup.open{display:block;}
+  .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .cal-month-label{font-weight:600;font-size:14px;}
+  .cal-nav{background:none;border:1px solid var(--border2);border-radius:4px;padding:5px 11px;cursor:pointer;font-size:14px;color:var(--text2);transition:all 0.1s;line-height:1;}
+  .cal-nav:hover{border-color:var(--accent2);color:var(--accent2);}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .cal-dow{text-align:center;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:0.5px;padding:4px 0 8px;text-transform:uppercase;}
+  .cal-day{text-align:center;padding:7px 2px;font-size:13px;border-radius:4px;cursor:pointer;transition:all 0.1s;border:1px solid transparent;}
+  .cal-day:hover:not(.empty):not(.future){background:#f0f6ff;border-color:var(--accent2);color:var(--accent2);}
+  .cal-day.today{font-weight:700;color:var(--accent2);}
+  .cal-day.selected{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+  .cal-day.empty,.cal-day.future{cursor:default;color:var(--border2);}
+  .cal-actions{margin-top:12px;display:flex;gap:6px;}
+  .cal-action-btn{flex:1;padding:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;border-radius:4px;cursor:pointer;transition:all 0.15s;}
+  .cal-action-btn.primary{background:var(--accent2);color:#fff;border:none;}
+  .cal-action-btn.primary:hover{background:#154a8a;}
+  .cal-action-btn.secondary{background:var(--surface);border:1px solid var(--border2);color:var(--text2);}
+  .cal-action-btn.secondary:hover{border-color:var(--text);color:var(--text);}
 
-  /* HEADER */
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 20px 32px;
-    display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; gap: 16px;
-    position: sticky; top: 0; z-index: 100;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  }
+  .days-select{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:8px 32px 8px 12px;font-family:'DM Sans',sans-serif;font-size:13px;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;border-radius:4px;}
+  .btn-primary{background:var(--accent2);color:#fff;border:none;padding:9px 22px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer;border-radius:4px;transition:background 0.15s;white-space:nowrap;}
+  .btn-primary:hover{background:#154a8a;}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-outline{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:9px 16px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-radius:4px;transition:all 0.15s;white-space:nowrap;}
+  .btn-outline:hover{border-color:var(--text);color:var(--text);}
 
-  .logo h1 {
-    font-family: 'DM Serif Display', serif;
-    font-size: 26px; font-weight: 400; letter-spacing: -0.5px; color: var(--text);
-  }
-  .logo h1 em { font-style: italic; color: var(--accent); }
-  .logo p { font-size: 11px; color: var(--muted); margin-top: 1px; letter-spacing: 0.5px; }
+  .main{padding:24px 0 40px;}
 
-  .header-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .alert-bar{padding:12px 16px;margin-bottom:20px;font-size:13px;display:flex;align-items:center;gap:8px;border-radius:6px;border-left:4px solid;}
+  .alert-bar.error{background:#fff5f5;border-color:var(--accent);color:#b03030;}
+  .alert-bar.info{background:#f0f6ff;border-color:var(--accent2);color:var(--accent2);}
+  .alert-bar.success{background:#f0fdf5;border-color:var(--delivered);color:var(--delivered);}
+  .alert-bar.hidden{display:none;}
 
-  /* Clickable date badge */
-  .date-badge {
-    font-family: 'DM Mono', monospace; font-size: 11px;
-    color: var(--text2); background: var(--surface2);
-    border: 1px solid var(--border2); padding: 6px 14px; border-radius: 4px;
-    cursor: pointer; user-select: none;
-    transition: all 0.15s;
-    position: relative;
-  }
-  .date-badge:hover { border-color: var(--accent2); color: var(--accent2); background: #f0f6ff; }
-  .date-badge.active-today {
-    background: var(--accent2); color: #fff; border-color: var(--accent2);
-  }
-  .date-badge::after {
-    content: ' ↑ TODAY';
-    font-size: 9px; letter-spacing: 1px; opacity: 0.7;
-  }
-  .date-badge.active-today::after { content: ' ✓ FILTERED'; opacity: 1; }
+  .setup-panel{background:#f0f6ff;border:1px solid #c5d8f5;border-left:4px solid var(--accent2);padding:20px 24px;margin-bottom:24px;border-radius:6px;}
+  .setup-panel h3{color:var(--accent2);font-size:14px;font-weight:600;margin-bottom:10px;}
+  .setup-panel ol{padding-left:20px;line-height:2.2;font-size:13px;color:var(--text2);}
+  .setup-panel code{font-family:'DM Mono',monospace;font-size:11px;background:rgba(26,86,160,0.1);padding:1px 6px;color:var(--accent2);border-radius:3px;}
+  .setup-panel a{color:var(--accent2);}
+  .setup-panel.hidden{display:none;}
 
-  .days-select {
-    background: var(--surface); border: 1px solid var(--border2);
-    color: var(--text); padding: 8px 32px 8px 12px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px;
-    outline: none; cursor: pointer; appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 10px center;
-    border-radius: 4px;
-  }
+  .stats-bar{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:24px;}
+  @media(max-width:1100px){.stats-bar{grid-template-columns:repeat(3,1fr);}}
+  @media(max-width:600px){.stats-bar{grid-template-columns:repeat(2,1fr);}}
+  .stat-cell{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;box-shadow:var(--shadow);transition:box-shadow 0.2s,transform 0.15s;}
+  .stat-cell.clickable{cursor:pointer;}
+  .stat-cell.clickable:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px);}
+  .stat-cell.clickable.active{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(26,86,160,0.15),var(--shadow);}
+  .stat-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+  .stat-value{font-family:'DM Serif Display',serif;font-size:38px;font-weight:400;line-height:1;}
+  .v-default{color:var(--text);}.v-delivered{color:var(--delivered);}.v-transit{color:var(--transit);}.v-label{color:var(--label-c);}.v-muted{color:var(--muted);}.v-accent{color:var(--accent);}
 
-  .btn-primary {
-    background: var(--accent2); color: #fff; border: none;
-    padding: 9px 22px; font-family: 'DM Sans', sans-serif;
-    font-weight: 600; font-size: 13px; cursor: pointer;
-    border-radius: 4px; transition: background 0.15s;
-    white-space: nowrap;
-  }
-  .btn-primary:hover { background: #154a8a; }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .search-box{flex:1;min-width:240px;background:var(--surface);border:1px solid var(--border2);padding:10px 16px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none;border-radius:4px;transition:border-color 0.2s,box-shadow 0.2s;}
+  .search-box:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(26,86,160,0.1);}
+  .search-box::placeholder{color:var(--muted);}
+  .filter-btn{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:9px 16px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-radius:4px;transition:all 0.15s;white-space:nowrap;}
+  .filter-btn:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  .filter-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
 
-  .btn-outline {
-    background: var(--surface); border: 1px solid var(--border2);
-    color: var(--text2); padding: 9px 16px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
-    cursor: pointer; border-radius: 4px; transition: all 0.15s; white-space: nowrap;
-  }
-  .btn-outline:hover { border-color: var(--text); color: var(--text); }
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);overflow:hidden;overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;}
+  thead{background:var(--surface2);border-bottom:2px solid var(--border);}
+  th{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:13px 18px;text-align:left;white-space:nowrap;cursor:pointer;user-select:none;transition:color 0.15s;}
+  th:hover{color:var(--text);}th.sorted{color:var(--accent2);}
+  tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s;}
+  tbody tr:last-child{border-bottom:none;}
+  tbody tr:hover{background:#f5f9ff;}
+  tbody tr.today-row{background:#eef6ff;}
+  td{padding:14px 18px;vertical-align:middle;white-space:nowrap;}
+  .order-id{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent2);font-weight:500;}
+  .order-link{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent2);font-weight:500;text-decoration:none;}
+  .order-link:hover{text-decoration:underline;color:var(--accent);}
+  .item-name{max-width:260px;overflow:hidden;text-overflow:ellipsis;font-weight:500;font-size:13px;}
+  .item-id{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);display:block;margin-top:2px;}
+  .item-id a{color:var(--muted);text-decoration:none;}
+  .item-id a:hover{color:var(--accent2);text-decoration:underline;}
+  .seller-name{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);}
+  .seller-link{font-family:'DM Mono',monospace;font-size:11px;color:var(--accent2);text-decoration:none;}
+  .seller-link:hover{text-decoration:underline;color:var(--accent);}
+  .carrier-badge{display:inline-block;font-family:'DM Mono',monospace;font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;letter-spacing:0.5px;font-weight:500;}
+  .price{font-family:'DM Mono',monospace;font-size:13px;font-weight:500;}
+  .no-val{font-size:13px;color:var(--muted);}
 
-  /* MAIN */
-  .main { padding: 24px 0 40px; }
+  /* Tracking links */
+  .tracking-wrap{display:flex;flex-direction:column;gap:3px;}
+  .tracking-link{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent2);text-decoration:none;cursor:pointer;transition:all 0.15s;display:inline-flex;align-items:center;gap:5px;}
+  .tracking-link:hover:not(.checking){text-decoration:underline;color:var(--accent);}
+  .tracking-link.checking{opacity:0.6;pointer-events:none;}
+  .tracking-link.is-delivered{color:var(--delivered)!important;font-weight:600;}
+  .tracking-link.is-transit{color:var(--transit)!important;}
+  .track-badge{font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600;}
+  .track-badge.delivered{background:#dcfce7;color:#166534;}
+  .track-badge.transit{background:#fef3c7;color:#92400e;}
+  .t-spinner{display:inline-block;width:10px;height:10px;border:1.5px solid var(--border2);border-top-color:var(--accent2);border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;}
 
-  /* ALERTS */
-  .alert-bar {
-    padding: 12px 16px; margin-bottom: 20px;
-    font-size: 13px; display: flex; align-items: center; gap: 8px;
-    border-radius: 6px; border-left: 4px solid;
-  }
-  .alert-bar.error { background: #fff5f5; border-color: var(--accent); color: #b03030; }
-  .alert-bar.info { background: #f0f6ff; border-color: var(--accent2); color: var(--accent2); }
-  .alert-bar.success { background: #f0fdf5; border-color: var(--delivered); color: var(--delivered); }
-  .alert-bar.hidden { display: none; }
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 12px;border-radius:20px;white-space:nowrap;}
+  .status::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+  .status.delivered{color:#166534;background:#dcfce7;}
+  .status.transit{color:#92400e;background:#fef3c7;}
+  .status.label{color:#5b21b6;background:#ede9fe;}
+  .status.pending{color:var(--muted);background:var(--surface2);border:1px solid var(--border);}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+  .status.transit::before{animation:pulse 1.8s infinite;}
 
-  /* SETUP */
-  .setup-panel {
-    background: #f0f6ff; border: 1px solid #c5d8f5;
-    border-left: 4px solid var(--accent2);
-    padding: 20px 24px; margin-bottom: 24px; border-radius: 6px;
-  }
-  .setup-panel h3 { color: var(--accent2); font-size: 14px; font-weight: 600; margin-bottom: 10px; }
-  .setup-panel ol { padding-left: 20px; line-height: 2.2; font-size: 13px; color: var(--text2); }
-  .setup-panel code {
-    font-family: 'DM Mono', monospace; font-size: 11px;
-    background: rgba(26,86,160,0.1); padding: 1px 6px; color: var(--accent2); border-radius: 3px;
-  }
-  .setup-panel a { color: var(--accent2); }
-  .setup-panel.hidden { display: none; }
+  .pagination{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-top:1px solid var(--border);background:var(--surface2);flex-wrap:wrap;gap:10px;}
+  .pagination-info{font-size:13px;color:var(--muted);}
+  .pagination-info strong{color:var(--text);}
+  .pagination-controls{display:flex;align-items:center;gap:6px;}
+  .page-btn{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;border-radius:4px;transition:all 0.15s;font-family:'DM Sans',sans-serif;}
+  .page-btn:hover:not(:disabled){border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  .page-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .page-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+  .page-size-select{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:6px 28px 6px 10px;font-size:12px;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;border-radius:4px;font-family:'DM Sans',sans-serif;}
 
-  /* STATS — clickable cards */
-  .stats-bar {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 14px; margin-bottom: 24px;
-  }
-  @media (max-width: 1100px) { .stats-bar { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 600px) { .stats-bar { grid-template-columns: repeat(2, 1fr); } }
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
 
-  .stat-cell {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 20px 22px;
-    box-shadow: var(--shadow); transition: box-shadow 0.2s, transform 0.15s;
-    cursor: default;
-  }
-  .stat-cell.clickable { cursor: pointer; }
-  .stat-cell.clickable:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
-  .stat-cell.clickable.active {
-    border-color: var(--accent2);
-    box-shadow: 0 0 0 3px rgba(26,86,160,0.15), var(--shadow);
-  }
+  .empty-state{text-align:center;padding:64px 20px;color:var(--muted);}
+  .empty-state .icon{font-size:40px;margin-bottom:14px;}
+  .empty-state .title{font-size:16px;font-weight:600;color:var(--text2);margin-bottom:6px;}
+  .empty-state .sub{font-size:13px;}
 
-  .stat-label {
-    font-size: 11px; font-weight: 600; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .stat-label .filter-hint {
-    font-size: 9px; opacity: 0; letter-spacing: 0.5px; color: var(--accent2);
-    transition: opacity 0.15s;
-  }
-  .stat-cell.clickable:hover .filter-hint { opacity: 1; }
-  .stat-cell.clickable.active .filter-hint { opacity: 1; content: '✓'; }
+  footer{padding:20px 0;margin-top:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+  footer p{font-size:12px;color:var(--muted);}
+  .live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--delivered);margin-right:6px;animation:pulse 2s infinite;vertical-align:middle;}
 
-  .stat-value {
-    font-family: 'DM Serif Display', serif;
-    font-size: 38px; font-weight: 400; line-height: 1;
-  }
-  .v-default { color: var(--text); }
-  .v-delivered { color: var(--delivered); }
-  .v-transit { color: var(--transit); }
-  .v-label { color: var(--label-c); }
-  .v-muted { color: var(--muted); }
-  .v-accent { color: var(--accent); }
-
-  /* TOOLBAR */
-  .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-
-  .search-box {
-    flex: 1; min-width: 240px;
-    background: var(--surface); border: 1px solid var(--border2);
-    padding: 10px 16px; color: var(--text);
-    font-family: 'DM Sans', sans-serif; font-size: 14px;
-    outline: none; border-radius: 4px;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-  .search-box:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(26,86,160,0.1); }
-  .search-box::placeholder { color: var(--muted); }
-
-  .filter-btn {
-    background: var(--surface); border: 1px solid var(--border2);
-    color: var(--text2); padding: 9px 16px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
-    cursor: pointer; border-radius: 4px; transition: all 0.15s; white-space: nowrap;
-  }
-  .filter-btn:hover { border-color: var(--accent2); color: var(--accent2); background: #f0f6ff; }
-  .filter-btn.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
-
-  /* TABLE */
-  .table-wrap {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; box-shadow: var(--shadow);
-    overflow: hidden; overflow-x: auto;
-  }
-
-  table { width: 100%; border-collapse: collapse; }
-  thead { background: var(--surface2); border-bottom: 2px solid var(--border); }
-
-  th {
-    font-size: 11px; font-weight: 600; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 1px;
-    padding: 13px 18px; text-align: left; white-space: nowrap;
-    cursor: pointer; user-select: none; transition: color 0.15s;
-  }
-  th:hover { color: var(--text); }
-  th.sorted { color: var(--accent2); }
-  th.sorted::after { content: ' ↕'; font-size: 10px; }
-
-  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
-  tbody tr:last-child { border-bottom: none; }
-  tbody tr:hover { background: #f5f9ff; }
-
-  td { padding: 14px 18px; vertical-align: middle; white-space: nowrap; }
-
-  .order-id { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent2); font-weight: 500; }
-  .item-name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--text); font-size: 13px; }
-  .seller-name { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); }
-
-  .tracking-link {
-    font-family: 'DM Mono', monospace; font-size: 12px;
-    color: var(--accent2); text-decoration: none; cursor: pointer; transition: color 0.15s;
-  }
-  .tracking-link:hover { color: var(--accent); text-decoration: underline; }
-
-  .carrier-badge {
-    display: inline-block; font-family: 'DM Mono', monospace; font-size: 10px;
-    padding: 2px 8px; background: var(--surface2); border: 1px solid var(--border2);
-    color: var(--text2); border-radius: 3px; letter-spacing: 0.5px; font-weight: 500;
-  }
-
-  .price { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text); font-weight: 500; }
-  .no-val { font-size: 13px; color: var(--muted); }
-
-  /* STATUS BADGES */
-  .status {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12px; font-weight: 600; padding: 4px 12px;
-    border-radius: 20px; white-space: nowrap;
-  }
-  .status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-  .status.delivered { color: #166534; background: #dcfce7; }
-  .status.transit { color: #92400e; background: #fef3c7; }
-  .status.label { color: #5b21b6; background: #ede9fe; }
-  .status.pending { color: var(--muted); background: var(--surface2); border: 1px solid var(--border); }
-
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-  .status.transit::before { animation: pulse 1.8s infinite; }
-
-  /* PAGINATION */
-  .pagination {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; border-top: 1px solid var(--border);
-    background: var(--surface2); flex-wrap: wrap; gap: 10px;
-  }
-  .pagination-info { font-size: 13px; color: var(--muted); }
-  .pagination-info strong { color: var(--text); }
-  .pagination-controls { display: flex; align-items: center; gap: 6px; }
-  .page-btn {
-    background: var(--surface); border: 1px solid var(--border2);
-    color: var(--text2); padding: 6px 12px; font-size: 13px; font-weight: 500;
-    cursor: pointer; border-radius: 4px; transition: all 0.15s;
-    font-family: 'DM Sans', sans-serif;
-  }
-  .page-btn:hover:not(:disabled) { border-color: var(--accent2); color: var(--accent2); background: #f0f6ff; }
-  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .page-btn.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
-  .page-size-select {
-    background: var(--surface); border: 1px solid var(--border2);
-    color: var(--text); padding: 6px 28px 6px 10px; font-size: 12px;
-    outline: none; cursor: pointer; appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 8px center;
-    border-radius: 4px; font-family: 'DM Sans', sans-serif;
-  }
-
-  /* SPINNER */
-  .spinner {
-    display: inline-block; width: 14px; height: 14px;
-    border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
-    border-radius: 50%; animation: spin 0.7s linear infinite;
-    vertical-align: middle; margin-right: 6px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* EMPTY STATE */
-  .empty-state { text-align: center; padding: 64px 20px; color: var(--muted); }
-  .empty-state .icon { font-size: 40px; margin-bottom: 14px; }
-  .empty-state .title { font-size: 16px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
-  .empty-state .sub { font-size: 13px; }
-
-  /* FOOTER */
-  footer {
-    padding: 20px 0; margin-top: 8px;
-    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
-  }
-  footer p { font-size: 12px; color: var(--muted); }
-  .live-dot {
-    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: var(--delivered); margin-right: 6px; animation: pulse 2s infinite; vertical-align: middle;
-  }
-
-  @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-  .fadein { animation: fadeUp 0.3s ease both; }
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .fadein{animation:fadeUp 0.3s ease both;}
 </style>
 </head>
 <body>
@@ -326,13 +170,32 @@
     <p>eBay Buyer Dashboard — Live</p>
   </div>
   <div class="header-right">
-    <div class="date-badge" id="dateBadge" onclick="toggleTodayFilter()" title="Click to filter today's orders only"></div>
+
+    <!-- Calendar date picker -->
+    <div class="cal-wrap">
+      <div class="cal-btn" id="calBtn" onclick="toggleCal()">
+        📅 <span id="calBtnLabel">Pick a date</span>
+      </div>
+      <div class="cal-popup" id="calPopup">
+        <div class="cal-header">
+          <button class="cal-nav" onclick="calNav(-1)">‹</button>
+          <span class="cal-month-label" id="calMonthLabel"></span>
+          <button class="cal-nav" onclick="calNav(1)">›</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-actions">
+          <button class="cal-action-btn secondary" onclick="clearCalFilter()">Clear</button>
+          <button class="cal-action-btn primary" onclick="applyCalFilter()">Apply</button>
+        </div>
+      </div>
+    </div>
+
     <select class="days-select" id="daysSelect" onchange="onRangeChange()">
       <option value="1">Today</option>
-      <option value="2">Yesterday + Today</option>
-      <option value="14">Last 14 Days</option>
+      <option value="yesterday">Yesterday</option>
       <option value="3">Last 3 Days</option>
       <option value="7">Last 7 Days</option>
+      <option value="14">Last 14 Days</option>
       <option value="30">Last 30 Days</option>
       <option value="90">Last 90 Days</option>
     </select>
@@ -348,43 +211,28 @@
       <li>Go to <a href="https://developer.ebay.com" target="_blank">developer.ebay.com</a> → create an app → copy your <code>App ID</code>, <code>Dev ID</code>, <code>Cert ID</code></li>
       <li>Click <strong>"User Tokens"</strong> → <strong>"Get a User Token"</strong> → sign in with your buyer account → copy token</li>
       <li>Add all four values to your Render environment variables and redeploy</li>
-      <li>Click <strong>↻ Sync eBay</strong> above to load your real orders</li>
+      <li>Click <strong>↻ Sync eBay</strong> to load your orders</li>
     </ol>
   </div>
 
   <div class="alert-bar hidden fadein" id="alertBar"></div>
 
-  <!-- Stats — delivered/transit/label/pending are clickable filters -->
   <div class="stats-bar fadein">
     <div class="stat-cell"><div class="stat-label">Total Orders</div><div class="stat-value v-default" id="statTotal">—</div></div>
-    <div class="stat-cell clickable" id="statCellDelivered" onclick="toggleStatFilter('delivered', this)" title="Click to filter delivered orders">
-      <div class="stat-label">Delivered <span class="filter-hint">FILTER</span></div>
-      <div class="stat-value v-delivered" id="statDelivered">—</div>
-    </div>
-    <div class="stat-cell clickable" id="statCellTransit" onclick="toggleStatFilter('transit', this)" title="Click to filter in-transit orders">
-      <div class="stat-label">In Transit <span class="filter-hint">FILTER</span></div>
-      <div class="stat-value v-transit" id="statTransit">—</div>
-    </div>
-    <div class="stat-cell clickable" id="statCellLabel" onclick="toggleStatFilter('label', this)" title="Click to filter label-only orders">
-      <div class="stat-label">Label Only <span class="filter-hint">FILTER</span></div>
-      <div class="stat-value v-label" id="statLabel">—</div>
-    </div>
-    <div class="stat-cell clickable" id="statCellPending" onclick="toggleStatFilter('pending', this)" title="Click to filter pending orders">
-      <div class="stat-label">Pending Ship <span class="filter-hint">FILTER</span></div>
-      <div class="stat-value v-muted" id="statPending">—</div>
-    </div>
+    <div class="stat-cell clickable" id="scDelivered" onclick="toggleStatFilter('delivered','scDelivered')"><div class="stat-label">Delivered</div><div class="stat-value v-delivered" id="statDelivered">—</div></div>
+    <div class="stat-cell clickable" id="scTransit" onclick="toggleStatFilter('transit','scTransit')"><div class="stat-label">In Transit</div><div class="stat-value v-transit" id="statTransit">—</div></div>
+    <div class="stat-cell clickable" id="scLabel" onclick="toggleStatFilter('label','scLabel')"><div class="stat-label">Label Only</div><div class="stat-value v-label" id="statLabel">—</div></div>
+    <div class="stat-cell clickable" id="scPending" onclick="toggleStatFilter('pending','scPending')"><div class="stat-label">Pending Ship</div><div class="stat-value v-muted" id="statPending">—</div></div>
     <div class="stat-cell"><div class="stat-label">Total Spent</div><div class="stat-value v-accent" id="statSpent">—</div></div>
   </div>
 
   <div class="toolbar fadein">
-    <input class="search-box" type="text" id="searchInput"
-      placeholder="🔍  Search by order ID, item, tracking number, or seller..."
-      oninput="onSearch()">
-    <button class="filter-btn active" id="fbAll" onclick="setFilter('all', this)">All Orders</button>
-    <button class="filter-btn" id="fbDelivered" onclick="setFilter('delivered', this)">Delivered</button>
-    <button class="filter-btn" id="fbTransit" onclick="setFilter('transit', this)">In Transit</button>
-    <button class="filter-btn" id="fbLabel" onclick="setFilter('label', this)">Label Only</button>
-    <button class="filter-btn" id="fbPending" onclick="setFilter('pending', this)">Pending</button>
+    <input class="search-box" type="text" id="searchInput" placeholder="🔍  Search by order ID, item, tracking number, or seller..." oninput="onSearch()">
+    <button class="filter-btn active" id="fbAll" onclick="setFilter('all',this)">All Orders</button>
+    <button class="filter-btn" id="fbDelivered" onclick="setFilter('delivered',this)">Delivered</button>
+    <button class="filter-btn" id="fbTransit" onclick="setFilter('transit',this)">In Transit</button>
+    <button class="filter-btn" id="fbLabel" onclick="setFilter('label',this)">Label Only</button>
+    <button class="filter-btn" id="fbPending" onclick="setFilter('pending',this)">Pending</button>
     <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
   </div>
 
@@ -396,7 +244,7 @@
           <th id="th-item" onclick="sortBy('item')">Item</th>
           <th id="th-seller" onclick="sortBy('seller')">Seller</th>
           <th id="th-carrier" onclick="sortBy('carrier')">Carrier</th>
-          <th>Tracking #</th>
+          <th>Tracking # <small style="font-weight:400;color:var(--muted);font-size:9px;">(click to verify status)</small></th>
           <th id="th-status" onclick="sortBy('status')">Status</th>
           <th id="th-date" onclick="sortBy('date')">Ordered</th>
           <th id="th-price" onclick="sortBy('price')">Paid</th>
@@ -410,16 +258,16 @@
         </div></td></tr>
       </tbody>
     </table>
-    <div class="pagination" id="paginationBar" style="display:none">
+    <div class="pagination" id="paginationBar" style="display:none;">
       <div class="pagination-info" id="pageInfo"></div>
       <div class="pagination-controls">
         <span style="font-size:12px;color:var(--muted);margin-right:4px;">Per page:</span>
         <select class="page-size-select" id="pageSizeSelect" onchange="onPageSizeChange()">
-          <option value="100" selected>100</option>
-          <option value="50">50</option>
           <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
           <option value="250">250</option>
-          <option value="500">500</option>
+          <option value="9999">All</option>
         </select>
         <button class="page-btn" id="btnPrev" onclick="goPage(-1)">← Prev</button>
         <div id="pageNumbers" style="display:flex;gap:4px;"></div>
@@ -430,367 +278,384 @@
 
   <footer>
     <p><span class="live-dot"></span>Last synced: <span id="lastSync">never</span> · <span id="orderCountLabel"></span></p>
-    <p>OrderRadar · eBay Trading API · GetOrders (Buyer role)</p>
+    <p>OrderRadar · eBay Trading API · Click any tracking # to verify delivery</p>
   </footer>
 
 </div></div>
 
 <script>
+// ── State ─────────────────────────────────────────────────────────────────────
 let allOrders = [];
 let currentFilter = 'all';
-let filterTodayOnly = false;
-let sortKey = 'date';
-let sortDir = -1;
-let currentPage = 1;
-let pageSize = 100;
-
-const statusLabels = { delivered:'Delivered', transit:'In Transit', label:'Label Created', pending:'Pending' };
+let sortKey = 'date', sortDir = -1;
+let currentPage = 1, pageSize = 100;
+let calFilterDate = null, calSelectedDate = null;
+let calViewYear, calViewMonth;
+const statusLabels = {delivered:'Delivered',transit:'In Transit',label:'Label Created',pending:'Pending'};
 const today = new Date();
 const todayStr = today.toDateString();
-const yesterdayStr = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).toDateString();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('dateBadge').setAttribute('data-date',
-    today.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }).toUpperCase()
-  );
-  updateDateBadge();
+  calViewYear = today.getFullYear();
+  calViewMonth = today.getMonth();
+  renderCal();
   checkHealth();
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.cal-wrap')) {
+      document.getElementById('calPopup').classList.remove('open');
+    }
+  });
 });
 
-function updateDateBadge() {
-  const badge = document.getElementById('dateBadge');
-  const dateText = badge.getAttribute('data-date');
-  badge.textContent = dateText;
-  if (filterTodayOnly) {
-    badge.classList.add('active-today');
-    badge.title = 'Click to remove today filter';
-  } else {
-    badge.classList.remove('active-today');
-    badge.title = "Click to filter today's orders only";
+// ── CALENDAR ──────────────────────────────────────────────────────────────────
+function toggleCal() { document.getElementById('calPopup').classList.toggle('open'); }
+
+function calNav(dir) {
+  calViewMonth += dir;
+  if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
+  if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
+  renderCal();
+}
+
+function renderCal() {
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('calMonthLabel').textContent = MONTHS[calViewMonth] + ' ' + calViewYear;
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+    const el = document.createElement('div'); el.className = 'cal-dow'; el.textContent = d; grid.appendChild(el);
+  });
+  const firstDay = new Date(calViewYear, calViewMonth, 1).getDay();
+  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+  for (let i = 0; i < firstDay; i++) {
+    const el = document.createElement('div'); el.className = 'cal-day empty'; grid.appendChild(el);
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const el = document.createElement('div');
+    const thisDate = new Date(calViewYear, calViewMonth, d);
+    const isFuture = thisDate > today;
+    const isToday = thisDate.toDateString() === todayStr;
+    const isSel = calSelectedDate && thisDate.toDateString() === calSelectedDate.toDateString();
+    el.className = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'') + (isSel?' selected':'');
+    el.textContent = d;
+    if (!isFuture) el.onclick = () => { calSelectedDate = new Date(calViewYear, calViewMonth, d); renderCal(); };
+    grid.appendChild(el);
   }
 }
 
-// ── Today filter (via date badge click) ───────────────────────────────────────
-function toggleTodayFilter() {
-  filterTodayOnly = !filterTodayOnly;
-  updateDateBadge();
+function applyCalFilter() {
+  if (!calSelectedDate) return;
+  calFilterDate = new Date(calSelectedDate);
+  // Clear the dropdown selection visually
+  document.getElementById('daysSelect').value = '1';
+  document.getElementById('calBtn').classList.add('active');
+  document.getElementById('calBtnLabel').textContent =
+    calFilterDate.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  document.getElementById('calPopup').classList.remove('open');
   currentPage = 1;
   renderTable();
 }
 
-// ── Range selector changed ────────────────────────────────────────────────────
+function clearCalFilter() {
+  calFilterDate = null; calSelectedDate = null;
+  renderCal();
+  document.getElementById('calBtn').classList.remove('active');
+  document.getElementById('calBtnLabel').textContent = 'Pick a date';
+  document.getElementById('calPopup').classList.remove('open');
+  currentPage = 1;
+  renderTable();
+}
+
+// ── Range dropdown ────────────────────────────────────────────────────────────
 function onRangeChange() {
-  filterTodayOnly = false;
-  updateDateBadge();
+  // Clear calendar filter
+  calFilterDate = null; calSelectedDate = null;
+  document.getElementById('calBtn').classList.remove('active');
+  document.getElementById('calBtnLabel').textContent = 'Pick a date';
   fetchOrders();
 }
 
-// ── Health check ──────────────────────────────────────────────────────────────
+// ── Health ────────────────────────────────────────────────────────────────────
 async function checkHealth() {
   try {
     const r = await fetch('/api/health');
-    const data = await r.json();
-    if (data.configured) {
-      document.getElementById('setupPanel').classList.add('hidden');
-      showAlert('info', '✓ eBay credentials detected — click Sync eBay to load your orders');
-    } else {
-      showAlert('error', '⚠ eBay credentials not found — add them to your Render environment variables');
-    }
-  } catch {
-    showAlert('error', '⚠ Cannot reach backend server. Make sure node server.js is running.');
-  }
+    const d = await r.json();
+    if (d.configured) { document.getElementById('setupPanel').classList.add('hidden'); showAlert('info','✓ eBay credentials detected — click Sync eBay to load your orders'); }
+    else showAlert('error','⚠ Credentials not found — add them to Render environment variables');
+  } catch { showAlert('error','⚠ Cannot reach backend server.'); }
 }
 
 // ── Fetch orders ──────────────────────────────────────────────────────────────
 async function fetchOrders() {
   const btn = document.getElementById('syncBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Syncing…';
-  const daysBack = document.getElementById('daysSelect').value;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Syncing…';
+  const val = document.getElementById('daysSelect').value;
+  const daysBack = val === 'yesterday' ? 2 : parseInt(val, 10);
+  const yesterdayStr = new Date(today.getFullYear(), today.getMonth(), today.getDate()-1).toDateString();
   try {
     const res = await fetch(`/api/orders?daysBack=${daysBack}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
-    allOrders = data.orders.map(o => ({
-      orderId: o.extendedOrderId || o.orderId,
-      item: o.items.map(i => i.title).join(' + '),
-      seller: o.seller,
-      allTracking: o.tracking,
-      trackingNumber: o.tracking[0]?.trackingNumber || '',
-      carrier: o.tracking[0]?.carrier || '',
-      status: o.deliveryStatus,
-      date: o.createdDate,
-      dateObj: o.createdDate ? new Date(o.createdDate) : null,
-      price: o.totalAmount,
-      currency: o.currency,
-    }));
-    updateStats(data.stats);
+    allOrders = data.orders
+      .filter(o => {
+        if (val === 'yesterday') {
+          const d = o.createdDate ? new Date(o.createdDate) : null;
+          return d && d.toDateString() === yesterdayStr;
+        }
+        return true;
+      })
+      .map(o => ({
+        orderId: o.extendedOrderId || o.orderId,
+        rawOrderId: o.orderId,
+        item: o.items.map(i => i.title).join(' + '),
+        itemIds: o.items.map(i => i.itemId).filter(Boolean),
+        seller: o.seller,
+        allTracking: o.tracking,
+        trackingNumber: o.tracking[0]?.trackingNumber || '',
+        carrier: o.tracking[0]?.carrier || '',
+        status: o.deliveryStatus,
+        confirmedStatus: null,
+        date: o.createdDate,
+        dateObj: o.createdDate ? new Date(o.createdDate) : null,
+        price: o.totalAmount,
+        currency: o.currency,
+      }));
+    recomputeStats();
     currentPage = 1;
     renderTable();
     document.getElementById('lastSync').textContent = new Date().toLocaleTimeString();
     document.getElementById('setupPanel').classList.add('hidden');
     showAlert('success', `✓ Loaded ${allOrders.length} orders`);
-  } catch (err) {
-    showAlert('error', `✗ Error: ${err.message}`);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '↻ Sync eBay';
-  }
+  } catch(err) { showAlert('error', `✗ Error: ${err.message}`); }
+  finally { btn.disabled=false; btn.textContent='↻ Sync eBay'; }
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
-function updateStats(stats) {
-  animateNum('statTotal', stats.total);
-  animateNum('statDelivered', stats.delivered);
-  animateNum('statTransit', stats.transit);
-  animateNum('statLabel', stats.label);
-  animateNum('statPending', stats.pending);
+function recomputeStats() {
+  const eff = o => o.confirmedStatus || o.status;
+  document.getElementById('statTotal').textContent = allOrders.length;
+  animateNum('statDelivered', allOrders.filter(o=>eff(o)==='delivered').length);
+  animateNum('statTransit',   allOrders.filter(o=>eff(o)==='transit').length);
+  animateNum('statLabel',     allOrders.filter(o=>eff(o)==='label').length);
+  animateNum('statPending',   allOrders.filter(o=>eff(o)==='pending').length);
   document.getElementById('statSpent').textContent =
-    '$' + parseFloat(stats.totalSpent).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    '$' + allOrders.reduce((s,o)=>s+o.price,0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
 function animateNum(id, target) {
   const el = document.getElementById(id);
-  let cur = 0;
-  const step = Math.max(1, Math.ceil(target / 30));
-  const t = setInterval(() => {
-    cur = Math.min(cur + step, target);
+  let cur = parseInt(el.textContent)||0;
+  const step = Math.max(1, Math.ceil(Math.abs(target-cur)/20));
+  const t = setInterval(()=>{
+    cur = cur<target ? Math.min(cur+step,target) : Math.max(cur-step,target);
     el.textContent = cur;
-    if (cur >= target) clearInterval(t);
-  }, 25);
+    if(cur===target) clearInterval(t);
+  },25);
 }
 
-// ── Clicking stat cards as filters ───────────────────────────────────────────
-function toggleStatFilter(statusKey, cell) {
-  const filterBtnMap = { delivered: 'fbDelivered', transit: 'fbTransit', label: 'fbLabel', pending: 'fbPending' };
+// ── Filters ───────────────────────────────────────────────────────────────────
+function toggleStatFilter(statusKey, cellId) {
+  const cell = document.getElementById(cellId);
   const isActive = cell.classList.contains('active');
-
-  // Clear all stat card active states
-  ['Delivered','Transit','Label','Pending'].forEach(k => {
-    document.getElementById('statCell' + k)?.classList.remove('active');
-  });
-
-  if (isActive) {
-    // Toggle off — go back to All
-    setFilterById('all');
-  } else {
-    cell.classList.add('active');
-    setFilterById(statusKey);
-  }
+  ['scDelivered','scTransit','scLabel','scPending'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  setFilterDirect(isActive ? 'all' : statusKey);
+  if (!isActive) cell.classList.add('active');
 }
 
-function setFilterById(f) {
-  currentFilter = f;
-  currentPage = 1;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  const map = { all: 'fbAll', delivered: 'fbDelivered', transit: 'fbTransit', label: 'fbLabel', pending: 'fbPending' };
-  if (map[f]) document.getElementById(map[f]).classList.add('active');
-  renderTable();
-}
-
-// ── Toolbar filters ───────────────────────────────────────────────────────────
 function setFilter(f, btn) {
-  currentFilter = f;
-  currentPage = 1;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  // Clear stat card active states
-  ['Delivered','Transit','Label','Pending'].forEach(k => {
-    document.getElementById('statCell' + k)?.classList.remove('active');
-  });
+  ['scDelivered','scTransit','scLabel','scPending'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  setFilterDirect(f);
+}
+
+function setFilterDirect(f) {
+  currentFilter = f; currentPage = 1;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  const map={all:'fbAll',delivered:'fbDelivered',transit:'fbTransit',label:'fbLabel',pending:'fbPending'};
+  document.getElementById(map[f])?.classList.add('active');
   renderTable();
 }
 
-function onSearch() {
-  currentPage = 1;
-  renderTable();
-}
+function onSearch() { currentPage=1; renderTable(); }
 
-// ── Get filtered + sorted orders ─────────────────────────────────────────────
+// ── Filtered + sorted list ────────────────────────────────────────────────────
 function getFiltered() {
   const q = document.getElementById('searchInput').value.toLowerCase();
   return allOrders
     .filter(o => {
-      // Status filter
-      if (currentFilter !== 'all' && o.status !== currentFilter) return false;
-      // Today-only filter
-      if (filterTodayOnly && o.dateObj && o.dateObj.toDateString() !== todayStr) return false;
-      // Search
-      if (q && !(
-        o.orderId.toLowerCase().includes(q) ||
-        o.item.toLowerCase().includes(q) ||
-        o.seller.toLowerCase().includes(q) ||
-        o.trackingNumber.toLowerCase().includes(q)
-      )) return false;
+      const eff = o.confirmedStatus || o.status;
+      if (currentFilter !== 'all' && eff !== currentFilter) return false;
+      if (calFilterDate && o.dateObj && o.dateObj.toDateString() !== calFilterDate.toDateString()) return false;
+      if (q && !(o.orderId.toLowerCase().includes(q)||o.item.toLowerCase().includes(q)||o.seller.toLowerCase().includes(q)||o.trackingNumber.toLowerCase().includes(q))) return false;
       return true;
     })
-    .sort((a, b) => {
-      let av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
-      if (sortKey === 'price') return (av - bv) * sortDir;
-      return String(av).localeCompare(String(bv)) * sortDir;
+    .sort((a,b) => {
+      let av=a[sortKey]??'', bv=b[sortKey]??'';
+      if (sortKey==='price') return (av-bv)*sortDir;
+      return String(av).localeCompare(String(bv))*sortDir;
     });
 }
 
-// ── Render table with pagination ─────────────────────────────────────────────
+// ── Render table ─────────────────────────────────────────────────────────────
 function renderTable() {
   const filtered = getFiltered();
-  const totalFiltered = filtered.length;
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
-  if (currentPage > totalPages) currentPage = totalPages;
-
-  const start = (currentPage - 1) * pageSize;
-  const end = Math.min(start + pageSize, totalFiltered);
-  const pageOrders = filtered.slice(start, end);
-
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total/pageSize));
+  if (currentPage>totalPages) currentPage=totalPages;
+  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize,total);
+  const page = filtered.slice(start,end);
   const tbody = document.getElementById('tableBody');
-  if (!pageOrders.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
-      <div class="icon">🔍</div>
-      <div class="title">No orders found</div>
-      <div class="sub">Try adjusting your search or filter</div>
-    </div></td></tr>`;
-    document.getElementById('paginationBar').style.display = 'none';
-    document.getElementById('orderCountLabel').textContent = '';
+
+  if (!page.length) {
+    tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state"><div class="icon">🔍</div><div class="title">No orders found</div><div class="sub">Try adjusting your search, filter, or date</div></div></td></tr>`;
+    document.getElementById('paginationBar').style.display='none';
+    document.getElementById('orderCountLabel').textContent='';
     return;
   }
 
-  tbody.innerHTML = pageOrders.map(o => {
+  tbody.innerHTML = page.map((o, i) => {
+    const globalIdx = allOrders.indexOf(o);
+    const eff = o.confirmedStatus || o.status;
+    const isToday = o.dateObj && o.dateObj.toDateString()===todayStr;
+    const dateStr = o.dateObj ? o.dateObj.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+
     const trackingHtml = o.allTracking.length
-      ? o.allTracking.map(t =>
-          `<a class="tracking-link" href="#" onclick="openTracking('${t.carrier}','${t.trackingNumber}');return false;">${t.trackingNumber}</a>`
-        ).join('<br>')
+      ? `<div class="tracking-wrap">${o.allTracking.map(t => {
+          const tid = `tl_${globalIdx}_${t.trackingNumber.replace(/[^a-z0-9]/gi,'_')}`;
+          const isConfDel = o.confirmedStatus === 'delivered';
+          const isConfTrans = o.confirmedStatus === 'transit' || o.confirmedStatus === 'in_transit';
+          return `<a class="tracking-link${isConfDel?' is-delivered':isConfTrans?' is-transit':''}"
+            id="${tid}" href="#"
+            onclick="checkTracking(event,'${t.carrier}','${t.trackingNumber}','${tid}',${globalIdx});return false;"
+            title="Click to verify delivery status with carrier">
+            ${t.trackingNumber}
+            ${isConfDel ? '<span class="track-badge delivered">✓ Delivered</span>' : ''}
+            ${isConfTrans && !isConfDel ? '<span class="track-badge transit">In Transit</span>' : ''}
+          </a>`;
+        }).join('')}</div>`
       : `<span class="no-val">—</span>`;
+
     const carrierHtml = o.allTracking.length
-      ? [...new Set(o.allTracking.map(t => t.carrier))].map(c => `<span class="carrier-badge">${c}</span>`).join(' ')
+      ? [...new Set(o.allTracking.map(t=>t.carrier))].map(c=>`<span class="carrier-badge">${c}</span>`).join(' ')
       : `<span class="no-val">—</span>`;
-    const dateStr = o.dateObj
-      ? o.dateObj.toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
-      : '—';
-    // Highlight today's orders
-    const isToday = o.dateObj && o.dateObj.toDateString() === todayStr;
-    const rowStyle = isToday ? ' style="background:#f0f8ff;"' : '';
-    return `<tr${rowStyle}>
-      <td><span class="order-id">${o.orderId}</span></td>
-      <td><div class="item-name" title="${o.item}">${o.item}</div></td>
-      <td><span class="seller-name">${o.seller || '—'}</span></td>
+
+    const ebayOrderUrl = `https://www.ebay.com/mesh/ord/details?orderId=${encodeURIComponent(o.rawOrderId||o.orderId)}`;
+    const itemIdsHtml = o.itemIds && o.itemIds.length
+      ? o.itemIds.map(id=>`<a class="item-id" href="https://www.ebay.com/itm/${id}" target="_blank">#${id}</a>`).join('')
+      : '';
+    const sellerHtml = o.seller
+      ? `<a class="seller-link" href="https://www.ebay.com/usr/${encodeURIComponent(o.seller)}" target="_blank">${o.seller}</a>`
+      : '<span class="no-val">—</span>';
+
+    return `<tr class="${isToday?'today-row':''}">
+      <td><a class="order-link" href="${ebayOrderUrl}" target="_blank" title="View on eBay">${o.orderId}</a></td>
+      <td><div class="item-name" title="${o.item}">${o.item}</div>${itemIdsHtml}</td>
+      <td>${sellerHtml}</td>
       <td>${carrierHtml}</td>
       <td>${trackingHtml}</td>
-      <td><span class="status ${o.status}">${statusLabels[o.status] || o.status}</span></td>
+      <td id="statusCell_${globalIdx}"><span class="status ${eff}">${statusLabels[eff]||eff}</span></td>
       <td><span class="no-val">${dateStr}</span></td>
-      <td><span class="price">${o.currency === 'USD' ? '$' : o.currency + ' '}${o.price.toFixed(2)}</span></td>
+      <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
     </tr>`;
   }).join('');
 
   // Pagination bar
-  const paginationBar = document.getElementById('paginationBar');
-  paginationBar.style.display = totalFiltered > 0 ? 'flex' : 'none';
+  document.getElementById('paginationBar').style.display='flex';
+  const calLabel = calFilterDate ? ' on ' + calFilterDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
+  document.getElementById('pageInfo').innerHTML=`Showing <strong>${start+1}–${end}</strong> of <strong>${total}</strong> orders${calLabel}`;
+  document.getElementById('orderCountLabel').textContent=`${total} order${total!==1?'s':''} shown`;
 
-  document.getElementById('pageInfo').innerHTML =
-    `Showing <strong>${start + 1}–${end}</strong> of <strong>${totalFiltered}</strong> orders`;
-
-  document.getElementById('orderCountLabel').textContent =
-    `${totalFiltered} order${totalFiltered !== 1 ? 's' : ''} shown`;
-
-  // Page number buttons (show up to 7)
   const pageNumbers = document.getElementById('pageNumbers');
-  pageNumbers.innerHTML = '';
-  let pagesToShow = [];
-  if (totalPages <= 7) {
-    for (let i = 1; i <= totalPages; i++) pagesToShow.push(i);
-  } else {
-    pagesToShow = [1];
-    if (currentPage > 3) pagesToShow.push('...');
-    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pagesToShow.push(i);
-    if (currentPage < totalPages - 2) pagesToShow.push('...');
-    pagesToShow.push(totalPages);
+  pageNumbers.innerHTML='';
+  let pages=[];
+  if(totalPages<=7){for(let i=1;i<=totalPages;i++)pages.push(i);}
+  else{
+    pages=[1];
+    if(currentPage>3)pages.push('...');
+    for(let i=Math.max(2,currentPage-1);i<=Math.min(totalPages-1,currentPage+1);i++)pages.push(i);
+    if(currentPage<totalPages-2)pages.push('...');
+    pages.push(totalPages);
   }
-
-  pagesToShow.forEach(p => {
-    if (p === '...') {
-      const span = document.createElement('span');
-      span.textContent = '…';
-      span.style.cssText = 'padding:6px 4px;color:var(--muted);font-size:13px;';
-      pageNumbers.appendChild(span);
-    } else {
-      const btn = document.createElement('button');
-      btn.className = 'page-btn' + (p === currentPage ? ' active' : '');
-      btn.textContent = p;
-      btn.onclick = () => { currentPage = p; renderTable(); };
-      pageNumbers.appendChild(btn);
-    }
+  pages.forEach(p=>{
+    if(p==='...'){const s=document.createElement('span');s.textContent='…';s.style.cssText='padding:6px 4px;color:var(--muted);font-size:13px;';pageNumbers.appendChild(s);}
+    else{const b=document.createElement('button');b.className='page-btn'+(p===currentPage?' active':'');b.textContent=p;b.onclick=()=>{currentPage=p;renderTable();window.scrollTo({top:0,behavior:'smooth'});};pageNumbers.appendChild(b);}
   });
+  document.getElementById('btnPrev').disabled=currentPage<=1;
+  document.getElementById('btnNext').disabled=currentPage>=totalPages;
 
-  document.getElementById('btnPrev').disabled = currentPage <= 1;
-  document.getElementById('btnNext').disabled = currentPage >= totalPages;
-
-  // Update sort indicators
-  ['orderId','item','seller','carrier','status','date','price'].forEach(k => {
-    const th = document.getElementById('th-' + k);
-    if (th) th.className = k === sortKey ? 'sorted' : '';
+  ['orderId','item','seller','carrier','status','date','price'].forEach(k=>{
+    const th=document.getElementById('th-'+k);if(th)th.className=k===sortKey?'sorted':'';
   });
 }
 
-// ── Pagination controls ───────────────────────────────────────────────────────
-function goPage(dir) {
-  const filtered = getFiltered();
-  const totalPages = Math.ceil(filtered.length / pageSize);
-  currentPage = Math.max(1, Math.min(currentPage + dir, totalPages));
-  renderTable();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+// ── Check tracking status on click ───────────────────────────────────────────
+async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
+  event.preventDefault();
+  const link = document.getElementById(linkId);
+  if (!link || link.classList.contains('checking')) return;
 
-function onPageSizeChange() {
-  pageSize = parseInt(document.getElementById('pageSizeSelect').value, 10);
-  currentPage = 1;
-  renderTable();
-}
+  link.classList.add('checking');
+  link.innerHTML = `<span class="t-spinner"></span> Checking…`;
 
-// ── Sort ─────────────────────────────────────────────────────────────────────
-function sortBy(key) {
-  if (sortKey === key) sortDir *= -1;
-  else { sortKey = key; sortDir = 1; }
-  currentPage = 1;
-  renderTable();
-}
-
-// ── Tracking link ─────────────────────────────────────────────────────────────
-async function openTracking(carrier, trackingNumber) {
   try {
-    const res = await fetch(`/api/tracking-url?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
+    const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
     const data = await res.json();
-    window.open(data.url, '_blank');
-  } catch { window.open('https://www.ebay.com/orders', '_blank'); }
+
+    if (data.delivered) {
+      allOrders[orderIdx].confirmedStatus = 'delivered';
+      link.classList.remove('checking'); link.classList.add('is-delivered');
+      link.innerHTML = `${trackingNumber} <span class="track-badge delivered">✓ Delivered</span>`;
+      // Update status cell immediately
+      const sc = document.getElementById('statusCell_'+orderIdx);
+      if(sc) sc.innerHTML = `<span class="status delivered">Delivered</span>`;
+      recomputeStats();
+      showAlert('success', `✓ Confirmed delivered: ${trackingNumber}`);
+    } else {
+      allOrders[orderIdx].confirmedStatus = 'transit';
+      link.classList.remove('checking'); link.classList.add('is-transit');
+      link.innerHTML = `${trackingNumber} <span class="track-badge transit">${data.status||'In Transit'}</span>`;
+      recomputeStats();
+      // Open carrier site so user can see full details
+      if (data.url) window.open(data.url, '_blank');
+    }
+  } catch(err) {
+    link.classList.remove('checking');
+    link.textContent = trackingNumber;
+    // Fallback: open carrier website directly
+    try {
+      const r = await fetch(`/api/tracking-url?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
+      const d = await r.json();
+      if(d.url) window.open(d.url,'_blank');
+    } catch{}
+  }
 }
 
-// ── CSV Export ────────────────────────────────────────────────────────────────
+function goPage(dir){const filtered=getFiltered();const tp=Math.ceil(filtered.length/pageSize);currentPage=Math.max(1,Math.min(currentPage+dir,tp));renderTable();window.scrollTo({top:0,behavior:'smooth'});}
+function onPageSizeChange(){pageSize=parseInt(document.getElementById('pageSizeSelect').value,10);currentPage=1;renderTable();}
+function sortBy(key){if(sortKey===key)sortDir*=-1;else{sortKey=key;sortDir=1;}currentPage=1;renderTable();}
+
 function exportCSV() {
   const orders = getFiltered();
-  if (!orders.length) return;
-  const headers = ['Order ID','Item','Seller','Carrier','Tracking Number','Status','Date Ordered','Amount'];
-  const rows = orders.map(o => [
-    o.orderId,
-    `"${o.item.replace(/"/g,'""')}"`,
-    o.seller,
-    o.allTracking.map(t => t.carrier).join(' | '),
-    o.allTracking.map(t => t.trackingNumber).join(' | '),
-    o.status,
-    o.dateObj ? o.dateObj.toLocaleString() : '',
-    o.price.toFixed(2),
+  if(!orders.length) return;
+  const headers=['Order ID','Item','Seller','Carrier','Tracking Number','Status','Confirmed Status','Date Ordered','Amount'];
+  const rows=orders.map(o=>[
+    o.orderId,`"${o.item.replace(/"/g,'""')}"`,o.seller,
+    o.allTracking.map(t=>t.carrier).join(' | '),
+    o.allTracking.map(t=>t.trackingNumber).join(' | '),
+    o.status, o.confirmedStatus||'',
+    o.dateObj?o.dateObj.toLocaleString():'',o.price.toFixed(2)
   ]);
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = `ebay-orders-${new Date().toISOString().slice(0,10)}.csv`;
+  const csv=[headers,...rows].map(r=>r.join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`ebay-orders-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
 
-// ── Alert ─────────────────────────────────────────────────────────────────────
-function showAlert(type, msg) {
-  const bar = document.getElementById('alertBar');
-  bar.className = `alert-bar ${type}`;
-  bar.textContent = msg;
-  if (type === 'success') setTimeout(() => bar.classList.add('hidden'), 4000);
+function showAlert(type,msg){
+  const bar=document.getElementById('alertBar');
+  bar.className=`alert-bar ${type}`;bar.textContent=msg;
+  if(type==='success')setTimeout(()=>bar.classList.add('hidden'),4000);
 }
 </script>
 </body>
