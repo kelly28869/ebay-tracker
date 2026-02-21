@@ -121,11 +121,11 @@ async function getAllOrders(daysBack, fromDateStr, toDateStr) {
     createTimeTo = now.toISOString();
   }
 
-  // eBay only allows fetching orders from the last 89 days
+  // eBay only allows fetching orders from the last 90 days
   const ninetyDaysAgo = new Date();
-  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 89);
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
   if (new Date(createTimeFrom) < ninetyDaysAgo) {
-    throw new Error('eBay only allows fetching orders from the last 89 days. Please select a date range within the past 89 days.');
+    throw new Error('eBay only allows fetching orders from the last 90 days. Please select a more recent date range.');
   }
 
   const page1Result = await fetchPage(createTimeFrom, createTimeTo, 1);

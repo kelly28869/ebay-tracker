@@ -249,19 +249,21 @@ function processOrders(orders, savedStatuses) {
       sellerMap[seller] = { name: seller, orders: [], totalSpent: 0, orderCount: 0, totalQty: 0, lastDate: null, firstDate: null };
     }
     const s = sellerMap[seller];
-    // Check all tracking numbers for a saved USPS-verified status
+    // Check all tracking numbers for a USPS-verified status (same store as main page)
     const allTracking = o.tracking || [];
     let savedStatus = null;
+    let savedDeliveryDate = null;
     for (const t of allTracking) {
-      const tn = t.trackingNumber || '';
-      if (tn && savedStatuses[tn]?.status) {
+      const tn = (t.trackingNumber || '').trim();
+      if (tn && savedStatuses[tn]) {
         savedStatus = savedStatuses[tn].status;
+        savedDeliveryDate = savedStatuses[tn].deliveryDate || null;
         break;
       }
     }
-    // If no USPS-verified status, use eBay's status but map it properly
-    const ebayStatus = o.deliveryStatus || 'pending';
-    const status = savedStatus || ebayStatus;
+    // Mirror main page logic: savedStatus wins, then eBay's status
+    // eBay's deliveryStatus is unreliable (shows 'transit' for delivered) so trust USPS
+    const status = savedStatus || o.deliveryStatus || 'pending';
     s.orders.push({
       orderId: o.extendedOrderId || o.orderId,
       item: o.items?.map(i => i.title).join(' + ') || '—',
@@ -269,6 +271,7 @@ function processOrders(orders, savedStatuses) {
       currency: o.currency || 'USD',
       date: o.createdDate,
       status,
+      deliveryDate: savedDeliveryDate,
       quantity: o.totalQuantity || o.items?.reduce((sum,i) => sum + (i.quantity||1), 0) || 1,
     });
     s.totalSpent += o.totalAmount || 0;
@@ -343,11 +346,15 @@ function renderSellers() {
         const statusCls = o.status === 'delivered' ? 'delivered' : o.status === 'transit' ? 'transit' : 'pending';
         const statusLabel = o.status === 'delivered' ? 'Delivered' : o.status === 'transit' ? 'In Transit' : 'Pending';
         const ebayUrl = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(o.orderId)}`;
+        const deliveryCell = o.deliveryDate
+          ? `<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green)">${o.deliveryDate}</span>`
+          : '<span style="color:var(--muted)">—</span>';
         return `<tr>
           <td class="date-cell">${dateStr}<br><span style="color:var(--muted);font-size:10px;">${timeStr}</span></td>
           <td class="item-title"><a href="${ebayUrl}" target="_blank" style="color:var(--accent2);text-decoration:none;" title="${o.item}">${o.item}</a></td>
           <td style="text-align:center;font-family:'DM Mono',monospace;font-size:12px;">${o.quantity > 1 ? `<span style="background:#f0f4ff;color:var(--accent2);padding:1px 7px;border-radius:10px;font-size:11px;">x${o.quantity}</span>` : o.quantity}</td>
           <td><span class="status-badge ${statusCls}">${statusLabel}</span></td>
+          <td>${deliveryCell}</td>
           <td class="price-cell" style="text-align:right;">$${o.price.toFixed(2)}</td>
         </tr>`;
       }).join('');
@@ -388,7 +395,7 @@ function renderSellers() {
       </div>
       <div class="seller-orders">
         <table class="orders-table">
-          <thead><tr><th>Date / Time</th><th>Item</th><th style="text-align:center">Qty</th><th>Status</th><th style="text-align:right">Price</th></tr></thead>
+          <thead><tr><th>Date / Time</th><th>Item</th><th style="text-align:center">Qty</th><th>Status</th><th>Delivered</th><th style="text-align:right">Price</th></tr></thead>
           <tbody>${ordersHtml}</tbody>
         </table>
       </div>
