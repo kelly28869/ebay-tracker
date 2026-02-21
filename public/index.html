@@ -427,12 +427,8 @@ function renderCal() {
       let cls = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'');
       if (!isFuture && calRangeStart) {
         const hoverEnd = calHoverDate || calRangeEnd;
-        const lo = calRangeEnd || hoverEnd
-          ? new Date(Math.min(calRangeStart, hoverEnd||calRangeStart))
-          : calRangeStart;
-        const hi = calRangeEnd || hoverEnd
-          ? new Date(Math.max(calRangeStart, hoverEnd||calRangeStart))
-          : calRangeStart;
+        const lo = new Date(Math.min(+calRangeStart, +(hoverEnd||calRangeStart)));
+        const hi = new Date(Math.max(+calRangeStart, +(hoverEnd||calRangeStart)));
         const isStart = thisDate.toDateString() === lo.toDateString();
         const isEnd   = thisDate.toDateString() === hi.toDateString();
         const inRange = thisDate >= lo && thisDate <= hi;
@@ -445,11 +441,19 @@ function renderCal() {
       el.textContent = d;
       if (!isFuture) {
         el.onclick = () => calDayClick(new Date(calViewYear, calViewMonth, d));
-        el.onmouseenter = () => { calHoverDate = new Date(calViewYear, calViewMonth, d); renderCal(); };
-        el.onmouseleave = () => { calHoverDate = null; renderCal(); };
+        // Only update hover state, don't re-render on mouseenter to avoid destroying elements mid-click
+        el.onmouseenter = () => {
+          if (!calRangeStart || calRangeEnd) return; // only preview hover when picking range end
+          calHoverDate = new Date(calViewYear, calViewMonth, d);
+          renderCal();
+        };
       }
       grid.appendChild(el);
     }
+    // Clear hover when leaving the whole grid (not per-cell, avoids destroying elements mid-click)
+    grid.onmouseleave = () => {
+      if (calHoverDate) { calHoverDate = null; renderCal(); }
+    };
   }
   updateCalHint();
 }
