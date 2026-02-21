@@ -4,256 +4,313 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OrderRadar — eBay Buyer Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0a0f;
-    --surface: #111118;
-    --border: #1e1e2e;
-    --accent: #e6ff00;
-    --accent2: #00d4ff;
-    --text: #e8e8f0;
-    --muted: #5a5a78;
-    --delivered: #00ff94;
-    --transit: #e6ff00;
-    --label-c: #ff9d00;
-    --exception: #ff4466;
+    --bg: #f0f0f0;
+    --surface: #ffffff;
+    --surface2: #f8f8f8;
+    --border: #e0e0e0;
+    --border2: #cccccc;
+    --accent: #c84b2f;
+    --accent2: #1a56a0;
+    --text: #111111;
+    --text2: #444444;
+    --muted: #888888;
+    --delivered: #1a7a4a;
+    --transit: #b45d0a;
+    --label-c: #7c3aab;
+    --shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.04);
+    --shadow-lg: 0 2px 8px rgba(0,0,0,0.1), 0 8px 24px rgba(0,0,0,0.07);
   }
+
   * { margin:0; padding:0; box-sizing:border-box; }
+
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'Syne', sans-serif;
+    font-family: 'DM Sans', sans-serif;
     min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
   }
-  body::before {
-    content: '';
-    position: fixed; inset: 0;
-    background-image:
-      linear-gradient(rgba(230,255,0,0.015) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(230,255,0,0.015) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none; z-index: 0;
-  }
-  .container { max-width: 1500px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  .container { max-width: 1500px; margin: 0 auto; padding: 0 32px; }
 
   /* HEADER */
   header {
-    padding: 28px 0 20px;
+    background: var(--surface);
     border-bottom: 1px solid var(--border);
-    display: flex; align-items: flex-end; justify-content: space-between;
+    padding: 20px 32px;
+    display: flex; align-items: center; justify-content: space-between;
     flex-wrap: wrap; gap: 16px;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }
-  .logo h1 { font-size: clamp(24px,4vw,44px); font-weight: 800; letter-spacing: -2px; line-height:1; }
-  .logo h1 span { color: var(--accent); }
-  .logo p { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); margin-top:5px; letter-spacing:2px; text-transform:uppercase; }
-  .header-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .date-badge { font-family:'Space Mono',monospace; font-size:11px; color:var(--accent); border:1px solid var(--accent); padding:5px 12px; letter-spacing:1px; }
 
-  /* Buttons */
-  .btn-primary {
-    background: var(--accent); color:#000; border:none; padding:8px 18px;
-    font-family:'Syne',sans-serif; font-weight:700; font-size:12px;
-    cursor:pointer; letter-spacing:1px; text-transform:uppercase;
-    transition: transform 0.1s, box-shadow 0.1s;
+  .logo h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px; font-weight: 400; letter-spacing: -0.5px; color: var(--text);
   }
-  .btn-primary:hover { transform:translate(-2px,-2px); box-shadow:4px 4px 0 rgba(230,255,0,0.3); }
-  .btn-primary:disabled { opacity:0.5; cursor:not-allowed; transform:none; box-shadow:none; }
+  .logo h1 em { font-style: italic; color: var(--accent); }
+  .logo p { font-size: 11px; color: var(--muted); margin-top: 1px; letter-spacing: 0.5px; }
+
+  .header-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+  .date-badge {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    color: var(--text2); background: var(--surface2);
+    border: 1px solid var(--border2); padding: 6px 14px; border-radius: 4px;
+  }
+
+  .days-select {
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--text); padding: 8px 32px 8px 12px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px;
+    outline: none; cursor: pointer; appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    border-radius: 4px;
+  }
+
+  .btn-primary {
+    background: var(--accent2); color: #fff; border: none;
+    padding: 9px 22px; font-family: 'DM Sans', sans-serif;
+    font-weight: 600; font-size: 13px; cursor: pointer;
+    border-radius: 4px; transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-primary:hover { background: #154a8a; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .btn-outline {
-    background:transparent; border:1px solid var(--accent2); color:var(--accent2);
-    padding:8px 18px; font-family:'Space Mono',monospace; font-size:10px;
-    cursor:pointer; letter-spacing:1px; text-transform:uppercase;
-    transition: background 0.15s;
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--text2); padding: 9px 16px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+    cursor: pointer; border-radius: 4px; transition: all 0.15s; white-space: nowrap;
   }
-  .btn-outline:hover { background:rgba(0,212,255,0.08); }
+  .btn-outline:hover { border-color: var(--text); color: var(--text); }
 
-  /* Days filter */
-  .days-select {
-    background:var(--surface); border:1px solid var(--border); color:var(--text);
-    padding:8px 12px; font-family:'Space Mono',monospace; font-size:11px;
-    outline:none; cursor:pointer;
+  /* MAIN */
+  .main { padding: 24px 0 40px; }
+
+  /* ALERTS */
+  .alert-bar {
+    padding: 12px 16px; margin-bottom: 20px;
+    font-size: 13px; display: flex; align-items: center; gap: 8px;
+    border-radius: 6px; border-left: 4px solid;
   }
-  .days-select:focus { border-color:var(--accent); }
+  .alert-bar.error { background: #fff5f5; border-color: var(--accent); color: #b03030; }
+  .alert-bar.info { background: #f0f6ff; border-color: var(--accent2); color: var(--accent2); }
+  .alert-bar.success { background: #f0fdf5; border-color: var(--delivered); color: var(--delivered); }
+  .alert-bar.hidden { display: none; }
+
+  /* SETUP */
+  .setup-panel {
+    background: #f0f6ff; border: 1px solid #c5d8f5;
+    border-left: 4px solid var(--accent2);
+    padding: 20px 24px; margin-bottom: 24px; border-radius: 6px;
+  }
+  .setup-panel h3 { color: var(--accent2); font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .setup-panel ol { padding-left: 20px; line-height: 2.2; font-size: 13px; color: var(--text2); }
+  .setup-panel code {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    background: rgba(26,86,160,0.1); padding: 1px 6px; color: var(--accent2); border-radius: 3px;
+  }
+  .setup-panel a { color: var(--accent2); }
+  .setup-panel.hidden { display: none; }
 
   /* STATS */
   .stats-bar {
-    display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr));
-    gap:1px; background:var(--border); border:1px solid var(--border);
-    margin:20px 0;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px; margin-bottom: 24px;
   }
-  .stat-cell { background:var(--surface); padding:16px 20px; position:relative; overflow:hidden; }
-  .stat-cell::after { content:''; position:absolute; bottom:0;left:0;right:0; height:2px; background:var(--accent); transform:scaleX(0); transform-origin:left; transition:transform 0.3s; }
-  .stat-cell:hover::after { transform:scaleX(1); }
-  .stat-label { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:2px; margin-bottom:6px; }
-  .stat-value { font-size:28px; font-weight:800; letter-spacing:-1px; line-height:1; transition: all 0.3s; }
-  .yellow { color:var(--accent); }
-  .cyan { color:var(--accent2); }
-  .green { color:var(--delivered); }
-  .orange { color:var(--label-c); }
-  .red { color:var(--exception); }
+  @media (max-width: 1100px) { .stats-bar { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { .stats-bar { grid-template-columns: repeat(2, 1fr); } }
 
-  /* STATUS / ALERTS */
-  .alert-bar {
-    padding:12px 16px; margin-bottom:16px;
-    font-family:'Space Mono',monospace; font-size:12px;
-    display:flex; align-items:center; gap:10px;
+  .stat-cell {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px 22px;
+    box-shadow: var(--shadow); transition: box-shadow 0.2s, transform 0.15s;
   }
-  .alert-bar.error { background:rgba(255,68,102,0.1); border:1px solid var(--exception); color:var(--exception); }
-  .alert-bar.info { background:rgba(0,212,255,0.08); border:1px solid var(--accent2); color:var(--accent2); }
-  .alert-bar.success { background:rgba(0,255,148,0.06); border:1px solid var(--delivered); color:var(--delivered); }
-  .alert-bar.hidden { display:none; }
+  .stat-cell:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+
+  .stat-label {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;
+  }
+
+  .stat-value {
+    font-family: 'DM Serif Display', serif;
+    font-size: 38px; font-weight: 400; line-height: 1;
+  }
+  .v-default { color: var(--text); }
+  .v-delivered { color: var(--delivered); }
+  .v-transit { color: var(--transit); }
+  .v-label { color: var(--label-c); }
+  .v-muted { color: var(--muted); }
+  .v-accent { color: var(--accent); }
 
   /* TOOLBAR */
-  .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+
   .search-box {
-    flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border);
-    padding:9px 14px; color:var(--text); font-family:'Space Mono',monospace; font-size:12px;
-    outline:none; transition:border-color 0.2s;
+    flex: 1; min-width: 240px;
+    background: var(--surface); border: 1px solid var(--border2);
+    padding: 10px 16px; color: var(--text);
+    font-family: 'DM Sans', sans-serif; font-size: 14px;
+    outline: none; border-radius: 4px;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
-  .search-box:focus { border-color:var(--accent); }
-  .search-box::placeholder { color:var(--muted); }
+  .search-box:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(26,86,160,0.1); }
+  .search-box::placeholder { color: var(--muted); }
+
   .filter-btn {
-    background:var(--surface); border:1px solid var(--border); color:var(--muted);
-    padding:9px 14px; font-family:'Space Mono',monospace; font-size:10px;
-    cursor:pointer; letter-spacing:1px; text-transform:uppercase; transition:all 0.15s;
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--text2); padding: 9px 16px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+    cursor: pointer; border-radius: 4px; transition: all 0.15s; white-space: nowrap;
   }
-  .filter-btn.active, .filter-btn:hover { border-color:var(--accent); color:var(--accent); background:rgba(230,255,0,0.05); }
+  .filter-btn:hover { border-color: var(--accent2); color: var(--accent2); background: #f0f6ff; }
+  .filter-btn.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
 
   /* TABLE */
-  .table-wrap { border:1px solid var(--border); overflow-x:auto; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  thead { background:var(--surface); border-bottom:2px solid var(--accent); }
+  .table-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow);
+    overflow: hidden; overflow-x: auto;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: var(--surface2); border-bottom: 2px solid var(--border); }
+
   th {
-    font-family:'Space Mono',monospace; font-size:9px; color:var(--muted);
-    text-transform:uppercase; letter-spacing:2px; padding:12px 14px;
-    text-align:left; white-space:nowrap; cursor:pointer; user-select:none;
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px;
+    padding: 13px 18px; text-align: left; white-space: nowrap;
+    cursor: pointer; user-select: none; transition: color 0.15s;
   }
-  th:hover { color:var(--accent); }
-  tbody tr { border-bottom:1px solid var(--border); transition:background 0.15s; }
-  tbody tr:hover { background:rgba(230,255,0,0.025); }
-  td { padding:12px 14px; vertical-align:middle; white-space:nowrap; }
+  th:hover { color: var(--text); }
 
-  .order-id { font-family:'Space Mono',monospace; font-size:11px; color:var(--accent2); }
-  .item-name { max-width:260px; overflow:hidden; text-overflow:ellipsis; font-weight:600; }
-  .seller { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); }
-  .tracking-num {
-    font-family:'Space Mono',monospace; font-size:11px; cursor:pointer;
-    color:var(--text); text-decoration:none; transition:color 0.15s;
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #f5f9ff; }
+
+  td { padding: 14px 18px; vertical-align: middle; white-space: nowrap; }
+
+  .order-id { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent2); font-weight: 500; }
+  .item-name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--text); font-size: 13px; }
+  .seller-name { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); }
+
+  .tracking-link {
+    font-family: 'DM Mono', monospace; font-size: 12px;
+    color: var(--accent2); text-decoration: none; cursor: pointer; transition: color 0.15s;
   }
-  .tracking-num:hover { color:var(--accent); text-decoration:underline; }
+  .tracking-link:hover { color: var(--accent); text-decoration: underline; }
+
   .carrier-badge {
-    font-family:'Space Mono',monospace; font-size:9px;
-    padding:2px 7px; background:rgba(255,255,255,0.05);
-    border:1px solid var(--border); color:var(--muted); letter-spacing:1px;
+    display: inline-block; font-family: 'DM Mono', monospace; font-size: 10px;
+    padding: 2px 8px; background: var(--surface2); border: 1px solid var(--border2);
+    color: var(--text2); border-radius: 3px; letter-spacing: 0.5px; font-weight: 500;
   }
-  .price { font-family:'Space Mono',monospace; font-size:12px; }
-  .no-val { font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); }
 
-  /* Status badges */
+  .price { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text); font-weight: 500; }
+  .no-val { font-size: 13px; color: var(--muted); }
+
+  /* STATUS BADGES */
   .status {
-    display:inline-flex; align-items:center; gap:5px;
-    font-family:'Space Mono',monospace; font-size:9px;
-    letter-spacing:1px; text-transform:uppercase; padding:3px 9px; border:1px solid;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 4px 12px;
+    border-radius: 20px; white-space: nowrap;
   }
-  .status::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; }
-  .status.delivered { color:var(--delivered); border-color:var(--delivered); background:rgba(0,255,148,0.06); }
-  .status.transit { color:var(--transit); border-color:var(--transit); background:rgba(230,255,0,0.06); }
-  .status.label { color:var(--label-c); border-color:var(--label-c); background:rgba(255,157,0,0.06); }
-  .status.pending { color:var(--muted); border-color:var(--muted); background:rgba(90,90,120,0.1); }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .status.transit::before { animation:pulse 1.5s infinite; }
+  .status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .status.delivered { color: #166534; background: #dcfce7; }
+  .status.transit { color: #92400e; background: #fef3c7; }
+  .status.label { color: #5b21b6; background: #ede9fe; }
+  .status.pending { color: var(--muted); background: var(--surface2); border: 1px solid var(--border); }
 
-  /* Loading spinner */
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .status.transit::before { animation: pulse 1.8s infinite; }
+
+  /* SPINNER */
   .spinner {
-    display:inline-block; width:16px; height:16px;
-    border:2px solid var(--border); border-top-color:var(--accent);
-    border-radius:50%; animation:spin 0.7s linear infinite;
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: middle; margin-right: 6px;
   }
-  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  .empty-state {
-    text-align:center; padding:60px 20px;
-    font-family:'Space Mono',monospace; color:var(--muted); font-size:12px;
-  }
-  .empty-state .icon { font-size:40px; margin-bottom:16px; opacity:0.4; }
+  /* EMPTY STATE */
+  .empty-state { text-align: center; padding: 64px 20px; color: var(--muted); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 14px; }
+  .empty-state .title { font-size: 16px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+  .empty-state .sub { font-size: 13px; }
 
-  /* Setup panel */
-  .setup-panel {
-    background:var(--surface); border:1px solid var(--border);
-    border-left:3px solid var(--accent2); padding:20px 24px; margin-bottom:20px;
-  }
-  .setup-panel h3 { color:var(--accent2); font-size:14px; margin-bottom:12px; letter-spacing:1px; text-transform:uppercase; }
-  .setup-panel ol { padding-left:20px; line-height:2; font-size:13px; color:var(--muted); }
-  .setup-panel li { margin-bottom:4px; }
-  .setup-panel code {
-    font-family:'Space Mono',monospace; font-size:11px;
-    background:rgba(0,212,255,0.08); padding:2px 6px; color:var(--accent2);
-  }
-  .setup-panel a { color:var(--accent2); }
-  .setup-panel.hidden { display:none; }
-
-  /* Footer */
+  /* FOOTER */
   footer {
-    padding:20px 0; margin-top:28px; border-top:1px solid var(--border);
-    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;
+    padding: 20px 0; margin-top: 8px;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
   }
-  footer p { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); letter-spacing:1px; }
-  .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--delivered); margin-right:5px; animation:pulse 1.5s infinite; vertical-align:middle; }
+  footer p { font-size: 12px; color: var(--muted); }
+  .live-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--delivered); margin-right: 6px; animation: pulse 2s infinite; vertical-align: middle;
+  }
 
-  @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-  .fadein { animation: fadeUp 0.4s ease both; }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  .fadein { animation: fadeUp 0.3s ease both; }
 </style>
 </head>
 <body>
-<div class="container">
 
-  <header>
-    <div class="logo">
-      <h1>ORDER<span>RADAR</span></h1>
-      <p>eBay Buyer Dashboard — Live API</p>
-    </div>
-    <div class="header-right">
-      <div class="date-badge" id="dateBadge"></div>
-      <select class="days-select" id="daysSelect" onchange="fetchOrders()">
-        <option value="1">Today</option>
-        <option value="3">Last 3 days</option>
-        <option value="7">Last 7 days</option>
-        <option value="30">Last 30 days</option>
-        <option value="90">Last 90 days</option>
-      </select>
-      <button class="btn-primary" id="syncBtn" onclick="fetchOrders()">↻ Sync eBay</button>
-    </div>
-  </header>
+<header>
+  <div class="logo">
+    <h1>Order<em>Radar</em></h1>
+    <p>eBay Buyer Dashboard — Live</p>
+  </div>
+  <div class="header-right">
+    <div class="date-badge" id="dateBadge"></div>
+    <select class="days-select" id="daysSelect" onchange="fetchOrders()">
+      <option value="1">Today</option>
+      <option value="3">Last 3 days</option>
+      <option value="7">Last 7 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+    <button class="btn-primary" id="syncBtn" onclick="fetchOrders()">↻ Sync eBay</button>
+  </div>
+</header>
 
-  <!-- Setup instructions (hidden once API is connected) -->
-  <div class="setup-panel" id="setupPanel">
+<div class="main"><div class="container">
+
+  <div class="setup-panel fadein" id="setupPanel">
     <h3>🔌 Connect your eBay Account</h3>
     <ol>
-      <li>Register at <a href="https://developer.ebay.com" target="_blank">developer.ebay.com</a> and create an app to get your <code>App ID</code>, <code>Dev ID</code>, <code>Cert ID</code></li>
-      <li>On the same page, click <strong>"Get a User Token"</strong>, sign in with your <strong>buyer</strong> eBay account, and copy the token</li>
-      <li>Copy <code>.env.example</code> → <code>.env</code> and paste all four credentials</li>
-      <li>Run <code>npm install && node server.js</code> — this dashboard will load your real orders automatically</li>
+      <li>Go to <a href="https://developer.ebay.com" target="_blank">developer.ebay.com</a> → create an app → copy your <code>App ID</code>, <code>Dev ID</code>, <code>Cert ID</code></li>
+      <li>Click <strong>"User Tokens"</strong> → <strong>"Get a User Token"</strong> → sign in with your buyer account → copy token</li>
+      <li>Add all four values to your Render environment variables and redeploy</li>
+      <li>Click <strong>↻ Sync eBay</strong> above to load your real orders</li>
     </ol>
   </div>
 
-  <!-- Alert bar -->
-  <div class="alert-bar hidden" id="alertBar"></div>
+  <div class="alert-bar hidden fadein" id="alertBar"></div>
 
-  <!-- Stats -->
   <div class="stats-bar fadein">
-    <div class="stat-cell"><div class="stat-label">Total Orders</div><div class="stat-value yellow" id="statTotal">—</div></div>
-    <div class="stat-cell"><div class="stat-label">Delivered</div><div class="stat-value green" id="statDelivered">—</div></div>
-    <div class="stat-cell"><div class="stat-label">In Transit</div><div class="stat-value cyan" id="statTransit">—</div></div>
-    <div class="stat-cell"><div class="stat-label">Label Only</div><div class="stat-value orange" id="statLabel">—</div></div>
-    <div class="stat-cell"><div class="stat-label">Pending Ship</div><div class="stat-value" id="statPending" style="color:var(--muted)">—</div></div>
-    <div class="stat-cell"><div class="stat-label">Total Spent</div><div class="stat-value yellow" id="statSpent">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Total Orders</div><div class="stat-value v-default" id="statTotal">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Delivered</div><div class="stat-value v-delivered" id="statDelivered">—</div></div>
+    <div class="stat-cell"><div class="stat-label">In Transit</div><div class="stat-value v-transit" id="statTransit">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Label Only</div><div class="stat-value v-label" id="statLabel">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Pending Ship</div><div class="stat-value v-muted" id="statPending">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Total Spent</div><div class="stat-value v-accent" id="statSpent">—</div></div>
   </div>
 
-  <!-- Toolbar -->
-  <div class="toolbar">
-    <input class="search-box" type="text" id="searchInput" placeholder="Search order ID, item, tracking, seller..." oninput="renderTable()">
-    <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+  <div class="toolbar fadein">
+    <input class="search-box" type="text" id="searchInput"
+      placeholder="🔍  Search by order ID, item, tracking number, or seller..."
+      oninput="renderTable()">
+    <button class="filter-btn active" onclick="setFilter('all', this)">All Orders</button>
     <button class="filter-btn" onclick="setFilter('delivered', this)">Delivered</button>
     <button class="filter-btn" onclick="setFilter('transit', this)">In Transit</button>
     <button class="filter-btn" onclick="setFilter('label', this)">Label Only</button>
@@ -261,9 +318,8 @@
     <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
   </div>
 
-  <!-- Table -->
   <div class="table-wrap fadein">
-    <table id="orderTable">
+    <table>
       <thead>
         <tr>
           <th onclick="sortBy('orderId')">Order #</th>
@@ -277,30 +333,28 @@
         </tr>
       </thead>
       <tbody id="tableBody">
-        <tr><td colspan="8">
-          <div class="empty-state">
-            <div class="icon">📦</div>
-            <div>Click <strong>Sync eBay</strong> to load your orders</div>
-          </div>
-        </td></tr>
+        <tr><td colspan="8"><div class="empty-state">
+          <div class="icon">📦</div>
+          <div class="title">No orders loaded yet</div>
+          <div class="sub">Click ↻ Sync eBay to load your purchases</div>
+        </div></td></tr>
       </tbody>
     </table>
   </div>
 
   <footer>
     <p><span class="live-dot"></span>Last synced: <span id="lastSync">never</span></p>
-    <p>ORDER RADAR — eBay Trading API via GetOrders (Buyer role)</p>
+    <p>OrderRadar · eBay Trading API · GetOrders (Buyer role)</p>
   </footer>
 
-</div>
+</div></div>
 
 <script>
 let allOrders = [];
 let currentFilter = 'all';
 let sortKey = 'date';
-let sortDir = -1; // -1 = desc
+let sortDir = -1;
 
-// ── Init ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   const now = new Date();
   document.getElementById('dateBadge').textContent =
@@ -314,51 +368,41 @@ async function checkHealth() {
     const data = await r.json();
     if (data.configured) {
       document.getElementById('setupPanel').classList.add('hidden');
-      showAlert('info', '✓ eBay API credentials detected — click Sync to load orders');
+      showAlert('info', '✓ eBay credentials detected — click Sync eBay to load your orders');
     } else {
-      showAlert('error', '⚠ eBay credentials not configured. See setup instructions above.');
+      showAlert('error', '⚠ eBay credentials not found — add them to your Render environment variables');
     }
   } catch {
-    showAlert('error', '⚠ Cannot reach backend server. Make sure `node server.js` is running.');
+    showAlert('error', '⚠ Cannot reach backend server. Make sure node server.js is running.');
   }
 }
 
-// ── Fetch orders from backend ────────────────────────────────
 async function fetchOrders() {
   const btn = document.getElementById('syncBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>';
-
+  btn.innerHTML = '<span class="spinner"></span>Syncing…';
   const daysBack = document.getElementById('daysSelect').value;
-  
   try {
     const res = await fetch(`/api/orders?daysBack=${daysBack}`);
     const data = await res.json();
-
     if (!res.ok) throw new Error(data.error || 'Unknown error');
-
-    // Flatten for display (one row per order, show first tracking)
     allOrders = data.orders.map(o => ({
       orderId: o.extendedOrderId || o.orderId,
       item: o.items.map(i => i.title).join(' + '),
       seller: o.seller,
-      carrier: o.tracking[0]?.carrier || '',
-      trackingNumber: o.tracking[0]?.trackingNumber || '',
       allTracking: o.tracking,
+      trackingNumber: o.tracking[0]?.trackingNumber || '',
+      carrier: o.tracking[0]?.carrier || '',
       status: o.deliveryStatus,
       date: o.createdDate,
       price: o.totalAmount,
       currency: o.currency,
-      paidTime: o.paidTime,
-      shippedTime: o.shippedTime,
     }));
-
     updateStats(data.stats);
     renderTable();
     document.getElementById('lastSync').textContent = new Date().toLocaleTimeString();
     document.getElementById('setupPanel').classList.add('hidden');
-    showAlert('success', `✓ Loaded ${allOrders.length} orders`);
-
+    showAlert('success', `✓ Loaded ${allOrders.length} orders successfully`);
   } catch (err) {
     showAlert('error', `✗ Error: ${err.message}`);
   } finally {
@@ -367,7 +411,6 @@ async function fetchOrders() {
   }
 }
 
-// ── Stats ─────────────────────────────────────────────────────
 function updateStats(stats) {
   animateNum('statTotal', stats.total);
   animateNum('statDelivered', stats.delivered);
@@ -389,7 +432,6 @@ function animateNum(id, target) {
   }, 25);
 }
 
-// ── Table ─────────────────────────────────────────────────────
 const statusLabels = { delivered:'Delivered', transit:'In Transit', label:'Label Created', pending:'Pending' };
 
 function getFiltered() {
@@ -403,8 +445,7 @@ function getFiltered() {
       o.trackingNumber.toLowerCase().includes(q)
     )
     .sort((a, b) => {
-      let av = a[sortKey] ?? '';
-      let bv = b[sortKey] ?? '';
+      let av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
       if (sortKey === 'price') return (av - bv) * sortDir;
       return String(av).localeCompare(String(bv)) * sortDir;
     });
@@ -413,30 +454,30 @@ function getFiltered() {
 function renderTable() {
   const orders = getFiltered();
   const tbody = document.getElementById('tableBody');
-
-  if (orders.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">🔍</div><div>No orders match</div></div></td></tr>`;
+  if (!orders.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+      <div class="icon">🔍</div>
+      <div class="title">No orders found</div>
+      <div class="sub">Try adjusting your search or filter</div>
+    </div></td></tr>`;
     return;
   }
-
   tbody.innerHTML = orders.map(o => {
-    const trackingHtml = o.allTracking.length > 0
-      ? o.allTracking.map(t => {
-          const trackUrl = `/api/tracking-url?carrier=${encodeURIComponent(t.carrier)}&trackingNumber=${encodeURIComponent(t.trackingNumber)}`;
-          return `<a class="tracking-num" href="#" onclick="openTracking('${t.carrier}','${t.trackingNumber}');return false;" title="${t.carrier}">${t.trackingNumber}</a>`;
-        }).join('<br>')
+    const trackingHtml = o.allTracking.length
+      ? o.allTracking.map(t =>
+          `<a class="tracking-link" href="#" onclick="openTracking('${t.carrier}','${t.trackingNumber}');return false;">${t.trackingNumber}</a>`
+        ).join('<br>')
       : `<span class="no-val">—</span>`;
-
-    const carrierHtml = o.allTracking.length > 0
+    const carrierHtml = o.allTracking.length
       ? [...new Set(o.allTracking.map(t => t.carrier))].map(c => `<span class="carrier-badge">${c}</span>`).join(' ')
       : `<span class="no-val">—</span>`;
-
-    const dateStr = o.date ? new Date(o.date).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
-
+    const dateStr = o.date
+      ? new Date(o.date).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+      : '—';
     return `<tr>
       <td><span class="order-id">${o.orderId}</span></td>
       <td><div class="item-name" title="${o.item}">${o.item}</div></td>
-      <td><span class="seller">${o.seller || '—'}</span></td>
+      <td><span class="seller-name">${o.seller || '—'}</span></td>
       <td>${carrierHtml}</td>
       <td>${trackingHtml}</td>
       <td><span class="status ${o.status}">${statusLabels[o.status] || o.status}</span></td>
@@ -459,26 +500,21 @@ function sortBy(key) {
   renderTable();
 }
 
-// ── Tracking link ─────────────────────────────────────────────
 async function openTracking(carrier, trackingNumber) {
   try {
     const res = await fetch(`/api/tracking-url?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
     const data = await res.json();
     window.open(data.url, '_blank');
-  } catch {
-    window.open(`https://www.ebay.com/orders`, '_blank');
-  }
+  } catch { window.open('https://www.ebay.com/orders', '_blank'); }
 }
 
-// ── CSV Export ────────────────────────────────────────────────
 function exportCSV() {
   const orders = getFiltered();
-  if (orders.length === 0) return;
-
-  const headers = ['Order ID', 'Item', 'Seller', 'Carrier', 'Tracking Number', 'Status', 'Date Ordered', 'Amount'];
+  if (!orders.length) return;
+  const headers = ['Order ID','Item','Seller','Carrier','Tracking Number','Status','Date Ordered','Amount'];
   const rows = orders.map(o => [
     o.orderId,
-    `"${o.item.replace(/"/g, '""')}"`,
+    `"${o.item.replace(/"/g,'""')}"`,
     o.seller,
     o.allTracking.map(t => t.carrier).join(' | '),
     o.allTracking.map(t => t.trackingNumber).join(' | '),
@@ -486,23 +522,18 @@ function exportCSV() {
     o.date ? new Date(o.date).toLocaleString() : '',
     o.price.toFixed(2),
   ]);
-
   const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = `ebay-orders-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
 
-// ── Alert helper ──────────────────────────────────────────────
 function showAlert(type, msg) {
   const bar = document.getElementById('alertBar');
   bar.className = `alert-bar ${type}`;
   bar.textContent = msg;
-  if (type === 'success') {
-    setTimeout(() => bar.classList.add('hidden'), 4000);
-  }
+  if (type === 'success') setTimeout(() => bar.classList.add('hidden'), 4000);
 }
 </script>
 </body>
