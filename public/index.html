@@ -198,6 +198,7 @@
     <p>eBay Buyer Dashboard — Live</p>
   </div>
   <div class="header-right">
+    <a href="/sellers.html" style="font-size:13px;color:var(--accent2);text-decoration:none;font-weight:500;padding:6px 12px;border:1px solid var(--border2);border-radius:4px;transition:all 0.15s;white-space:nowrap;" onmouseover="this.style.background='var(--accent2)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='var(--accent2)'">🏪 Top Sellers</a>
 
     <!-- Calendar date picker -->
     <div class="cal-wrap">
@@ -880,11 +881,6 @@ function renderTable() {
     return `<tr class="${isToday?'today-row':''}">
       <td>
         <a class="order-link" href="${ebayOrderUrl}" target="_blank" title="Open order on eBay">${o.orderId}</a>
-        <button class="check-status-btn${statusChecked?' checked':''}"
-          onclick="checkOrderStatus(event,${globalIdx},'${rawId}')"
-          title="${statusChecked ? 'Status verified — click to recheck' : 'Click to verify status from eBay order page'}">
-          ${statusChecked ? '✓ verified' : '⟳ check'}
-        </button>
       </td>
       <td><div class="item-name" title="${o.item}">${o.item}</div>${itemIdsHtml}</td>
       <td>${sellerHtml}</td>
