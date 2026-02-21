@@ -138,31 +138,40 @@ async function getAllOrders(daysBack, fromDateStr, toDateStr) {
 }
 
 function getDeliveryStatus(order, transactions, allTracking) {
-  // Simple 3-state logic matching what eBay purchase history shows:
-  //   delivered  → eBay ActualDeliveryTime is set, OR ShippingStatus === "Delivered"
-  //   transit    → tracking number exists (package is on the way)
-  //   pending    → paid but no tracking number yet
+  // 3-state logic:
+  //   delivered → eBay or carrier explicitly confirms delivery
+  //   transit   → tracking number exists
+  //   pending   → paid, no tracking yet
 
   const hasTrackingNumber = allTracking.some(t => t.trackingNumber && t.trackingNumber.length > 4);
 
-  // 1. Check for actual delivery confirmation from eBay
-  //    ActualDeliveryTime is only populated once the carrier confirms delivery
+  // Signal 1: ActualDeliveryTime (set by eBay when carrier confirms)
   if (order.ActualDeliveryTime) return 'delivered';
 
-  // 2. Check explicit ShippingStatus = Delivered at transaction or order level
-  for (const tx of transactions) {
-    const s = tx.ShippingDetails && tx.ShippingDetails.ShippingStatus;
-    if (s === 'Delivered') return 'delivered';
-  }
+  // Signal 2: ShippingServiceSelected.ShippingStatus = Delivered (order level)
   const orderShipStatus = order.ShippingDetails
     && order.ShippingDetails.ShippingServiceSelected
     && order.ShippingDetails.ShippingServiceSelected.ShippingStatus;
   if (orderShipStatus === 'Delivered') return 'delivered';
 
-  // 3. Tracking exists = in transit (label created + shipped, en route)
+  // Signal 3: Transaction-level ShippingStatus
+  for (const tx of transactions) {
+    const s = tx.ShippingDetails && tx.ShippingDetails.ShippingStatus;
+    if (s === 'Delivered') return 'delivered';
+  }
+
+  // Signal 4: OrderStatus "Completed" AND ShippedTime is set means delivered
+  // (eBay only marks Completed once buyer confirms or return window closes after delivery)
+  if (order.OrderStatus === 'Completed' && order.ShippedTime) return 'delivered';
+
+  // Signal 5: CheckoutStatus complete + shipped = delivered
+  const checkoutStatus = order.CheckoutStatus && order.CheckoutStatus.Status;
+  if (checkoutStatus === 'Complete' && order.ShippedTime && hasTrackingNumber) return 'delivered';
+
+  // Transit: has a tracking number
   if (hasTrackingNumber) return 'transit';
 
-  // 4. No tracking = still pending / not yet shipped
+  // Pending: paid but nothing shipped yet
   return 'pending';
 }
 
@@ -234,6 +243,7 @@ function parseOrder(order) {
     paidTime: order.PaidTime || null,
     shippedTime: order.ShippedTime || null,
     actualDeliveryTime: order.ActualDeliveryTime || null,
+    checkoutStatus: (order.CheckoutStatus && order.CheckoutStatus.Status) || null,
   };
 }
 
