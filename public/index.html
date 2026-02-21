@@ -712,49 +712,43 @@ async function applyStoredStatuses() {
 }
 
 // ── Auto-check all tracking numbers after sync ────────────────────────────────
-// Fires in background — won't block the UI. Skips orders already saved.
 async function autoCheckAllTracking(savedStore) {
   const toCheck = allOrders.filter(o =>
-    o.trackingNumber &&
-    !savedStore[o.trackingNumber] // skip already-known statuses
+    o.trackingNumber && !savedStore[o.trackingNumber]
   );
   if (toCheck.length === 0) return;
-  console.log('Auto-checking', toCheck.length, 'tracking numbers...');
+  console.log('Auto-checking', toCheck.length, 'tracking numbers in parallel...');
 
-  for (const o of toCheck) {
-    const idx = allOrders.indexOf(o);
-    try {
-      const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(o.carrier)}&trackingNumber=${encodeURIComponent(o.trackingNumber)}`);
-      const data = await res.json();
-      if (!data.status || data.status === 'unknown' || data.status === 'error') continue;
+  const BATCH = 10; // check 10 at a time
+  for (let i = 0; i < toCheck.length; i += BATCH) {
+    const batch = toCheck.slice(i, i + BATCH);
+    await Promise.all(batch.map(async o => {
+      const idx = allOrders.indexOf(o);
+      try {
+        const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(o.carrier)}&trackingNumber=${encodeURIComponent(o.trackingNumber)}`);
+        const data = await res.json();
+        if (!data.status || data.status === 'unknown' || data.status === 'error') return;
 
-      // Update order object
-      o.confirmedStatus = data.status;
-      o.deliveryDate = data.deliveryDate || null;
+        o.confirmedStatus = data.status;
+        o.deliveryDate = data.deliveryDate || null;
 
-      // Update status cell
-      const sc = document.getElementById('statusCell_' + idx);
-      if (sc) {
-        const label = data.status === 'delivered' ? 'Delivered' : data.status === 'transit' ? 'In Transit' : data.status;
-        const cls   = data.status === 'delivered' ? 'delivered' : data.status === 'transit' ? 'transit' : 'pending';
-        sc.innerHTML = `<span class="status ${cls}">${label}</span> <span class="verified-tag">✓ usps</span>`;
+        const sc = document.getElementById('statusCell_' + idx);
+        if (sc) {
+          const label = data.status === 'delivered' ? 'Delivered' : data.status === 'transit' ? 'In Transit' : data.status;
+          const cls   = data.status === 'delivered' ? 'delivered' : 'transit';
+          sc.innerHTML = `<span class="status ${cls}">${label}</span> <span class="verified-tag">✓ usps</span>`;
+        }
+        const dc = document.getElementById('deliveryDateCell_' + idx);
+        if (dc) {
+          dc.innerHTML = data.deliveryDate
+            ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
+            : '<span class="no-val">—</span>';
+        }
+      } catch(e) {
+        console.error('Auto-check failed for', o.trackingNumber, ':', e.message);
       }
-
-      // Update delivery date cell
-      const dc = document.getElementById('deliveryDateCell_' + idx);
-      if (dc) {
-        dc.innerHTML = data.deliveryDate
-          ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
-          : '<span class="no-val">—</span>';
-      }
-
-      recomputeStats();
-    } catch(e) {
-      console.error('Auto-check failed for', o.trackingNumber, ':', e.message);
-    }
-
-    // Small delay between requests to avoid hammering the API
-    await new Promise(r => setTimeout(r, 300));
+    }));
+    recomputeStats();
   }
   console.log('Auto-check complete.');
 }
@@ -1011,6 +1005,9 @@ async function checkOrderStatus(event, orderIdx, rawOrderId) {
 
 async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
   event.preventDefault();
+  // Open USPS immediately — don't wait for API
+  window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
+
   const link = document.getElementById(linkId);
   if (!link || link.classList.contains('checking')) return;
 
@@ -1023,18 +1020,18 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
 
     if (data.status === 'delivered') {
       allOrders[orderIdx].confirmedStatus = 'delivered';
-      allOrders[orderIdx].deliveryDate = null;
+      allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
       link.classList.remove('checking'); link.classList.add('is-delivered');
       link.innerHTML = `${trackingNumber} <span class="track-badge delivered">✓ Delivered</span>`;
       const sc = document.getElementById('statusCell_'+orderIdx);
       if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ saved</span>`;
       const dc = document.getElementById('deliveryDateCell_'+orderIdx);
-      if (dc) dc.innerHTML = '<span class="no-val">—</span>';
+      if (dc) dc.innerHTML = data.deliveryDate ? `<span class="delivery-date-val">${data.deliveryDate}</span>` : '<span class="no-val">—</span>';
       recomputeStats();
       showAlert('success', `✓ Delivered confirmed & saved: ${trackingNumber}`);
-      // Save to server so it persists across refreshes
       fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ trackingNumber, status: 'delivered', deliveryDate: null, carrier }) });
+        body: JSON.stringify({ trackingNumber, status: 'delivered', deliveryDate: data.deliveryDate || null, carrier }) });
+      window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
     } else if (data.status === 'transit') {
       allOrders[orderIdx].confirmedStatus = 'transit';
       allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
@@ -1047,15 +1044,13 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
         ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
         : '<span class="no-val">—</span>';
       recomputeStats();
-      if (data.url) window.open(data.url, '_blank');
-      // Save to server
+      window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
       fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ trackingNumber, status: 'transit', deliveryDate: data.deliveryDate || null, carrier }) });
     } else {
-      // unknown/error — just open carrier site, don't change status
       link.classList.remove('checking');
       link.textContent = trackingNumber;
-      if (data.url) window.open(data.url, '_blank');
+      window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
     }
   } catch(err) {
     link.classList.remove('checking');
