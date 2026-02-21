@@ -30,13 +30,22 @@
   .cal-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
 
   /* ── CALENDAR POPUP ── */
-  .cal-popup{display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:var(--shadow-lg);padding:16px;z-index:999;min-width:284px;}
+  .cal-popup{display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:var(--shadow-lg);padding:16px;z-index:999;min-width:292px;}
   .cal-popup.open{display:block;}
-  .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
-  .cal-month-label{font-weight:600;font-size:14px;}
-  .cal-nav{background:none;border:1px solid var(--border2);border-radius:4px;padding:5px 11px;cursor:pointer;font-size:14px;color:var(--text2);transition:all 0.1s;line-height:1;}
+  .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:4px;}
+  .cal-nav{background:none;border:1px solid var(--border2);border-radius:4px;padding:5px 10px;cursor:pointer;font-size:14px;color:var(--text2);transition:all 0.1s;line-height:1;flex-shrink:0;}
   .cal-nav:hover{border-color:var(--accent2);color:var(--accent2);}
+  /* Clickable month/year label — toggles picker view */
+  .cal-month-label{font-weight:600;font-size:14px;cursor:pointer;padding:4px 8px;border-radius:4px;border:1px solid transparent;transition:all 0.15s;white-space:nowrap;}
+  .cal-month-label:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  /* Month picker grid */
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .cal-month-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px;}
+  .cal-year-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;}
+  .cal-pick-item{text-align:center;padding:8px 4px;font-size:13px;border-radius:4px;cursor:pointer;border:1px solid transparent;transition:all 0.1s;}
+  .cal-pick-item:hover:not(.future-item){background:#f0f6ff;border-color:var(--accent2);color:var(--accent2);}
+  .cal-pick-item.current{font-weight:700;color:var(--accent2);}
+  .cal-pick-item.future-item{color:var(--border2);cursor:default;}
   .cal-dow{text-align:center;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:0.5px;padding:4px 0 8px;text-transform:uppercase;}
   .cal-day{text-align:center;padding:7px 2px;font-size:13px;border-radius:4px;cursor:pointer;transition:all 0.1s;border:1px solid transparent;}
   .cal-day:hover:not(.empty):not(.future){background:#f0f6ff;border-color:var(--accent2);color:var(--accent2);}
@@ -189,11 +198,11 @@
       </div>
       <div class="cal-popup" id="calPopup">
         <div class="cal-header">
-          <button class="cal-nav" onclick="calNav(-1)">‹</button>
-          <span class="cal-month-label" id="calMonthLabel"></span>
-          <button class="cal-nav" onclick="calNav(1)">›</button>
+          <button class="cal-nav" id="calNavPrev" onclick="calNavPrev()">‹</button>
+          <span class="cal-month-label" id="calMonthLabel" onclick="cycleCalView()"></span>
+          <button class="cal-nav" id="calNavNext" onclick="calNavNext()">›</button>
         </div>
-        <div class="cal-grid" id="calGrid"></div>
+        <div id="calGrid"></div>
         <div class="cal-actions">
           <button class="cal-action-btn secondary" onclick="clearCalFilter()">✕ Clear filter</button>
         </div>
@@ -317,38 +326,93 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── CALENDAR ──────────────────────────────────────────────────────────────────
+const MONTHS     = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// calView: 'day' | 'month' | 'year'
+let calView = 'day';
+
 function toggleCal() { document.getElementById('calPopup').classList.toggle('open'); }
 
-function calNav(dir) {
-  calViewMonth += dir;
-  if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
-  if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
+// Clicking the month/year label cycles through views: day → month → year → day
+function cycleCalView() {
+  if (calView === 'day')   calView = 'month';
+  else if (calView === 'month') calView = 'year';
+  else calView = 'day';
+  renderCal();
+}
+
+// Prev/Next arrows behave differently per view
+function calNavPrev() {
+  if (calView === 'day')   { calViewMonth--; if (calViewMonth < 0)  { calViewMonth = 11; calViewYear--; } }
+  else if (calView === 'month') { calViewYear--; }
+  else if (calView === 'year')  { calViewYear -= 12; }
+  renderCal();
+}
+function calNavNext() {
+  if (calView === 'day')   { calViewMonth++; if (calViewMonth > 11) { calViewMonth = 0;  calViewYear++; } }
+  else if (calView === 'month') { calViewYear++; }
+  else if (calView === 'year')  { calViewYear += 12; }
   renderCal();
 }
 
 function renderCal() {
-  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  document.getElementById('calMonthLabel').textContent = MONTHS[calViewMonth] + ' ' + calViewYear;
   const grid = document.getElementById('calGrid');
+  const label = document.getElementById('calMonthLabel');
   grid.innerHTML = '';
-  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
-    const el = document.createElement('div'); el.className = 'cal-dow'; el.textContent = d; grid.appendChild(el);
-  });
-  const firstDay = new Date(calViewYear, calViewMonth, 1).getDay();
-  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
-  for (let i = 0; i < firstDay; i++) {
-    const el = document.createElement('div'); el.className = 'cal-day empty'; grid.appendChild(el);
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    const el = document.createElement('div');
-    const thisDate = new Date(calViewYear, calViewMonth, d);
-    const isFuture = thisDate > today;
-    const isToday = thisDate.toDateString() === todayStr;
-    const isSel = calSelectedDate && thisDate.toDateString() === calSelectedDate.toDateString();
-    el.className = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'') + (isSel?' selected':'');
-    el.textContent = d;
-    if (!isFuture) el.onclick = () => { calSelectedDate = new Date(calViewYear, calViewMonth, d); applyCalFilter(); };
-    grid.appendChild(el);
+
+  if (calView === 'year') {
+    // ── Year picker: show 12-year block ─────────────────────────────────────
+    const startYear = Math.floor(calViewYear / 12) * 12;
+    label.textContent = startYear + ' – ' + (startYear + 11);
+    grid.className = 'cal-year-grid';
+    for (let y = startYear; y < startYear + 12; y++) {
+      const el = document.createElement('div');
+      const isFuture = y > today.getFullYear();
+      const isCurrent = y === today.getFullYear();
+      el.className = 'cal-pick-item' + (isCurrent ? ' current' : '') + (isFuture ? ' future-item' : '');
+      el.textContent = y;
+      if (!isFuture) el.onclick = () => { calViewYear = y; calView = 'month'; renderCal(); };
+      grid.appendChild(el);
+    }
+
+  } else if (calView === 'month') {
+    // ── Month picker: show all 12 months for calViewYear ────────────────────
+    label.textContent = String(calViewYear);
+    grid.className = 'cal-month-grid';
+    MONTHS_SHT.forEach((name, idx) => {
+      const el = document.createElement('div');
+      const isFuture = calViewYear > today.getFullYear() ||
+                       (calViewYear === today.getFullYear() && idx > today.getMonth());
+      const isCurrent = calViewYear === today.getFullYear() && idx === today.getMonth();
+      el.className = 'cal-pick-item' + (isCurrent ? ' current' : '') + (isFuture ? ' future-item' : '');
+      el.textContent = name;
+      if (!isFuture) el.onclick = () => { calViewMonth = idx; calView = 'day'; renderCal(); };
+      grid.appendChild(el);
+    });
+
+  } else {
+    // ── Day picker ───────────────────────────────────────────────────────────
+    label.textContent = MONTHS[calViewMonth] + ' ' + calViewYear;
+    grid.className = 'cal-grid';
+    ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+      const el = document.createElement('div'); el.className = 'cal-dow'; el.textContent = d; grid.appendChild(el);
+    });
+    const firstDay = new Date(calViewYear, calViewMonth, 1).getDay();
+    const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+    for (let i = 0; i < firstDay; i++) {
+      const el = document.createElement('div'); el.className = 'cal-day empty'; grid.appendChild(el);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const el = document.createElement('div');
+      const thisDate = new Date(calViewYear, calViewMonth, d);
+      const isFuture = thisDate > today;
+      const isToday  = thisDate.toDateString() === todayStr;
+      const isSel    = calSelectedDate && thisDate.toDateString() === calSelectedDate.toDateString();
+      el.className = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'') + (isSel?' selected':'');
+      el.textContent = d;
+      if (!isFuture) el.onclick = () => { calSelectedDate = new Date(calViewYear, calViewMonth, d); applyCalFilter(); };
+      grid.appendChild(el);
+    }
   }
 }
 
@@ -366,6 +430,7 @@ function applyCalFilter() {
 
 function clearCalFilter() {
   calFilterDate = null; calSelectedDate = null;
+  calView = 'day';
   renderCal();
   document.getElementById('calBtn').classList.remove('active');
   document.getElementById('calBtnLabel').textContent = 'Pick a date';

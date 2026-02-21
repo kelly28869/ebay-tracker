@@ -162,24 +162,19 @@ function getDeliveryStatus(order, transactions, allTracking) {
   return 'pending';
 }
 
-// ── Scrape eBay order page to read stepper icon stages ───────────────────────
-// The eBay order detail page shows a progress stepper with SVG icons:
-//   icon-stepper-confirmation-24  = stage completed ✓
-//   icon-stepper-upcoming-24      = stage not yet reached
-// Stages in order on the page: Paid → Shipped/Tracking → Delivered
-// We fetch the page HTML using the user's auth token as a cookie so eBay
-// returns the real personalised order page, then count confirmation icons
-// up to each stage to determine the furthest confirmed stage.
+// ── Scrape eBay order page for plain-text status sentences ──────────────────
+// eBay order page shows these exact sentences in the stepper:
+//   "Your item was delivered."        → Delivered
+//   "A tracking number was provided." → In Transit
+//   Neither present                   → Pending
 async function scrapeOrderPageStatus(orderId) {
   if (!EBAY_USER_TOKEN) return null;
 
-  // eBay order page URL
   const url = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(orderId)}`;
 
   try {
     const resp = await axios.get(url, {
       headers: {
-        // Pass the Trading API token as the eBay auth cookie so the page renders
         'Cookie': `ebay=%5Esbf%3D%23000000%5E; nonsession=BAQAAAXarUsE5AAQAAAAAAAAAAAAAAAAAAAAABI=; s=%7B%22enc%22%3A%22AQAHAAAAEAAAAXarUsE5%22%7D`,
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -187,54 +182,60 @@ async function scrapeOrderPageStatus(orderId) {
         'Referer': 'https://www.ebay.com/mye/myebay/purchase',
       },
       timeout: 10000,
-      maxRedirects: 3,
+      maxRedirects: 5,
     });
 
     const html = resp.data;
 
-    // Count stepper icons in document order.
-    // Each stage has exactly one icon — confirmation or upcoming.
-    // We find all icon refs and map them to stages in sequence.
-    const iconPattern = /xlink:href="#icon-stepper-(confirmation|upcoming)-24"/g;
-    const stages = [];
-    let m;
-    while ((m = iconPattern.exec(html)) !== null) {
-      stages.push(m[1]); // 'confirmation' or 'upcoming'
-    }
+    console.log('Order', orderId, '→ page length:', html.length);
 
-    // stages[0] = Paid, stages[1] = Tracking/Shipped, stages[2] = Delivered
-    // Find the furthest stage that has 'confirmation'
-    if (stages.length === 0) {
-      console.log('DEBUG scrape: no stepper icons found for order', orderId);
-      console.log('DEBUG html snippet:', html.substring(0, 500));
-      return null;
-    }
-
-    console.log('Order', orderId, 'stepper stages:', stages);
-
-    // Delivered = stage index 2 (or last) is confirmation
-    if (stages[2] === 'confirmation' || (stages.length >= 3 && stages[stages.length - 1] === 'confirmation')) {
+    // Check for exact eBay status sentences — most specific first
+    if (html.includes('Your item was delivered.')) {
+      console.log('Order', orderId, '→ DELIVERED (found "Your item was delivered.")');
       return 'delivered';
     }
-    // In transit = stage 1 (tracking) is confirmation but stage 2 (delivered) is upcoming
-    if (stages[1] === 'confirmation' && stages[2] === 'upcoming') {
+
+    if (html.includes('A tracking number was provided.')) {
+      console.log('Order', orderId, '→ TRANSIT (found "A tracking number was provided.")');
       return 'transit';
     }
-    // Pending = only stage 0 (paid) is confirmation
-    if (stages[0] === 'confirmation' && (stages[1] === 'upcoming' || stages.length < 2)) {
-      return 'pending';
-    }
 
-    // Fallback: return furthest confirmed stage
-    let furthest = null;
-    if (stages[0] === 'confirmation') furthest = 'pending';
-    if (stages[1] === 'confirmation') furthest = 'transit';
-    if (stages[2] === 'confirmation') furthest = 'delivered';
-    return furthest;
+    // Neither sentence found — order is paid but not yet shipped
+    console.log('Order', orderId, '→ PENDING (no delivery/tracking sentences found)');
+    console.log('DEBUG snippet:', html.slice(0, 600));
+    return 'pending';
 
   } catch (err) {
     console.error('scrapeOrderPageStatus error for', orderId, ':', err.message);
     return null;
+  }
+}
+
+// ── Debug endpoint: returns raw HTML snippet around stepper icons ─────────────
+// Call GET /api/debug-order?orderId=XXX to see what eBay actually returns
+async function debugOrderPage(orderId) {
+  const url = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(orderId)}`;
+  try {
+    const resp = await axios.get(url, {
+      headers: {
+        'Cookie': `ebay=%5Esbf%3D%23000000%5E; nonsession=BAQAAAXarUsE5AAQAAAAAAAAAAAAAAAAAAAAABI=; s=%7B%22enc%22%3A%22AQAHAAAAEAAAAXarUsE5%22%7D`,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      timeout: 10000,
+    });
+    const html = resp.data;
+    return {
+      totalLength: html.length,
+      hasDeliveredSentence: html.includes('Your item was delivered.'),
+      hasTrackingSentence: html.includes('A tracking number was provided.'),
+      detectedStatus: html.includes('Your item was delivered.') ? 'delivered'
+                    : html.includes('A tracking number was provided.') ? 'transit'
+                    : 'pending',
+      first800: html.slice(0, 800),
+    };
+  } catch(err) {
+    return { error: err.message };
   }
 }
 
@@ -435,6 +436,14 @@ app.get('/api/order-status', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message, status: 'error' });
   }
+});
+
+// ── Debug endpoint: inspect raw eBay order page ──────────────────────────────
+app.get('/api/debug-order', async (req, res) => {
+  const { orderId } = req.query;
+  if (!orderId) return res.status(400).json({ error: 'orderId required' });
+  const result = await debugOrderPage(orderId);
+  res.json(result);
 });
 
 // ── Check real delivery status by scraping carrier page ───────────────────────
