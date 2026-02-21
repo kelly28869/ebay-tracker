@@ -711,7 +711,17 @@ app.post('/ebay/account-deletion', (req, res) => {
 });
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  // Only fall back to index.html for non-file routes (SPA routing)
+  // Let express.static handle actual files like sellers.html
+  const filePath = path.join(__dirname, 'public', req.path);
+  if (req.path.includes('.')) {
+    // Has an extension — try to serve the file, 404 if not found
+    res.sendFile(filePath, err => {
+      if (err) res.status(404).send('Not found');
+    });
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 app.listen(PORT, () => {
