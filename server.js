@@ -38,7 +38,7 @@ const {
   EBAY_USER_TOKEN,
   USPS_CLIENT_ID,
   USPS_CLIENT_SECRET,
-  SHIP24_API_KEY,
+  AFTERSHIP_API_KEY,
   DASHBOARD_USERNAME = 'admin',
   DASHBOARD_PASSWORD,
   PORT = 3000
@@ -467,74 +467,96 @@ function parseOrder(order) {
   };
 }
 
-// ── Carrier tracking status scraper ─────────────────────────────────────────
-// Fetches the carrier's tracking page HTML and looks for "Delivered" keywords.
-// This is the most accurate method — reads what the carrier website actually says.
+// ── AfterShip tracking ────────────────────────────────────────────────────────
+// POST /trackings creates or re-uses a tracking, returns tag (status) immediately.
+// tag values: Pending, InfoReceived, InTransit, OutForDelivery, AttemptFail,
+//             Delivered, AvailableForPickup, Exception, Expired
 async function scrapeCarrierStatus(carrier, trackingNumber) {
-  const c = (carrier || '').toUpperCase();
   const url = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
   let status = 'unknown', delivered = false, deliveryDate = null;
 
-  if (!SHIP24_API_KEY) {
-    console.log('No SHIP24_API_KEY configured');
+  if (!AFTERSHIP_API_KEY) {
+    console.log('No AFTERSHIP_API_KEY configured');
     return { status, delivered, deliveryDate, url, carrier, trackingNumber };
   }
 
   try {
-    // Ship24 universal tracking API — works for USPS, UPS, FedEx, DHL, and 1500+ carriers
-    // POST /trackers/track creates a tracker and returns results synchronously
-    const resp = await axios.post(
-      'https://api.ship24.com/public/v1/trackers/track',
-      { trackingNumber, shipmentReference: trackingNumber },
-      {
-        headers: {
-          'Authorization': `Bearer ${SHIP24_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 30000, // Ship24 can take up to 30s on first lookup
+    // Step 1: Create tracking (AfterShip returns existing tracking if already added)
+    let tracking;
+    try {
+      const createResp = await axios.post(
+        'https://api.aftership.com/tracking/2024-04/trackings',
+        { tracking: { tracking_number: trackingNumber } },
+        {
+          headers: {
+            'as-api-key': AFTERSHIP_API_KEY,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
+      tracking = createResp.data.data.tracking;
+    } catch (createErr) {
+      // 4003 = tracking already exists — fetch it instead
+      if (createErr.response?.data?.meta?.code === 4003) {
+        const id = createErr.response.data.data?.tracking?.id;
+        if (id) {
+          const getResp = await axios.get(
+            `https://api.aftership.com/tracking/2024-04/trackings/${id}`,
+            { headers: { 'as-api-key': AFTERSHIP_API_KEY }, timeout: 15000 }
+          );
+          tracking = getResp.data.data.tracking;
+        } else {
+          // Search by tracking number
+          const searchResp = await axios.get(
+            `https://api.aftership.com/tracking/2024-04/trackings?tracking_numbers=${encodeURIComponent(trackingNumber)}`,
+            { headers: { 'as-api-key': AFTERSHIP_API_KEY }, timeout: 15000 }
+          );
+          tracking = searchResp.data.data?.trackings?.[0];
+        }
+      } else {
+        throw createErr;
       }
-    );
+    }
 
-    const data = resp.data;
-    console.log('Ship24 response for', trackingNumber, ':', JSON.stringify(data).slice(0, 500));
-
-    // Response: data.data.trackings[0]
-    const tracking = data.data && data.data.trackings && data.data.trackings[0];
     if (!tracking) {
-      console.log('Ship24: no tracking data returned');
+      console.log('AfterShip: no tracking data for', trackingNumber);
       return { status: 'unknown', delivered: false, deliveryDate: null, url, carrier, trackingNumber };
     }
 
-    // statusMilestone is the overall shipment status — reliable across all carriers
-    // Values: "pending" | "in_transit" | "out_for_delivery" | "delivered" | "available_for_pickup" | "delivery_failure" | "unknown"
-    const shipment = tracking.shipment || {};
-    const milestone = (shipment.statusMilestone || '').toLowerCase();
-    console.log('Ship24 statusMilestone:', milestone, 'for', trackingNumber);
+    const tag = tracking.tag || '';
+    console.log('AfterShip tag:', tag, '| subtag:', tracking.subtag, '| for:', trackingNumber);
 
-    if (milestone === 'delivered') {
+    if (tag === 'Delivered') {
       status = 'delivered';
       delivered = true;
-    } else if (['in_transit', 'out_for_delivery', 'available_for_pickup'].includes(milestone)) {
+    } else if (['InTransit', 'OutForDelivery', 'AvailableForPickup', 'InfoReceived'].includes(tag)) {
       status = 'transit';
-      // Estimated delivery date
-      if (shipment.estimatedDeliveryDate) {
+      // Use AfterShip's estimated delivery date
+      const edd = tracking.latest_estimated_delivery?.date
+        || tracking.estimated_delivery_date
+        || tracking.shipment_delivery_date;
+      if (edd) {
         try {
-          deliveryDate = new Date(shipment.estimatedDeliveryDate)
-            .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          deliveryDate = new Date(edd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         } catch {}
       }
-    } else if (milestone === 'pending') {
+    } else if (tag === 'Pending') {
       status = 'pending';
+    } else if (['AttemptFail', 'Exception', 'Expired'].includes(tag)) {
+      status = 'transit'; // show as transit so user knows something's happening
     }
 
   } catch (err) {
-    console.error('Ship24 error for', trackingNumber, ':', err.message);
-    if (err.response) console.error('Status:', err.response.status, JSON.stringify(err.response.data || '').slice(0, 200));
+    console.error('AfterShip error for', trackingNumber, ':', err.message);
+    if (err.response) console.error('Response:', JSON.stringify(err.response.data || '').slice(0, 300));
     status = 'error';
   }
 
   return { status, delivered, deliveryDate, url, carrier, trackingNumber };
-}// ── Routes ───────────────────────────────────────────────────────────────────
+}
+
+// ── Routes ───────────────────────────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -619,6 +641,23 @@ app.get('/api/debug-tracking', async (req, res) => {
     });
   } catch(err) {
     res.json({ error: err.message });
+  }
+});
+
+// ── Debug: see raw AfterShip response for a tracking number ──────────────────
+app.get('/api/debug-ship24', async (req, res) => {
+  const { trackingNumber } = req.query;
+  if (!trackingNumber) return res.status(400).json({ error: 'trackingNumber required' });
+  if (!AFTERSHIP_API_KEY) return res.status(400).json({ error: 'AFTERSHIP_API_KEY not set' });
+  try {
+    const resp = await axios.post(
+      'https://api.aftership.com/tracking/2024-04/trackings',
+      { tracking: { tracking_number: trackingNumber } },
+      { headers: { 'as-api-key': AFTERSHIP_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 }
+    );
+    res.json(resp.data);
+  } catch(err) {
+    res.json({ error: err.message, response: err.response?.data });
   }
 });
 
