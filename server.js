@@ -6,45 +6,62 @@ const xml2js = require('xml2js');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ── Persistent tracking status store ─────────────────────────────────────────
-// Saved to /tmp/tracking-status.json on Render (resets on redeploy, but persists
-// across requests in the same deployment). Key = trackingNumber, value = { status, deliveryDate, savedAt }
-const STATUS_FILE = path.join('/tmp', 'tracking-status.json');
+// ── Postgres (notes only) ─────────────────────────────────────────────────────
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+});
 
-function loadStatusStore() {
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_notes (
+      order_id TEXT PRIMARY KEY,
+      note TEXT,
+      saved_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  console.log('DB ready');
+}
+initDb().catch(e => console.error('DB init error:', e.message));
+
+async function saveNote(orderId, note) {
+  if (!note || note.trim() === '') {
+    delete notesStore[orderId];
+    try { await pool.query('DELETE FROM order_notes WHERE order_id=$1', [orderId]); }
+    catch(e) { console.error('deleteNote error:', e.message); }
+  } else {
+    notesStore[orderId] = { note, savedAt: new Date().toISOString() };
+    try {
+      await pool.query(
+        `INSERT INTO order_notes (order_id, note, saved_at)
+         VALUES ($1,$2,NOW())
+         ON CONFLICT (order_id) DO UPDATE SET note=$2, saved_at=NOW()`,
+        [orderId, note]
+      );
+    } catch(e) { console.error('saveNote error:', e.message); }
+  }
+}
+
+// ── In-memory tracking status store (re-checked on every sync via USPS) ───────
+let trackingStatusStore = {};
+
+// ── In-memory notes cache (backed by Postgres) ────────────────────────────────
+let notesStore = {};
+async function loadNotesFromDb() {
   try {
-    if (fs.existsSync(STATUS_FILE)) return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
-  } catch(e) { console.error('loadStatusStore error:', e.message); }
-  return {};
+    const r = await pool.query('SELECT * FROM order_notes');
+    notesStore = {};
+    r.rows.forEach(row => { notesStore[row.order_id] = { note: row.note, savedAt: row.saved_at }; });
+    console.log(`Loaded ${r.rows.length} notes from DB`);
+  } catch(e) { console.error('loadNotesFromDb error:', e.message); }
 }
-
-function saveStatusStore(store) {
-  try { fs.writeFileSync(STATUS_FILE, JSON.stringify(store, null, 2)); } 
-  catch(e) { console.error('saveStatusStore error:', e.message); }
-}
-
-let trackingStatusStore = loadStatusStore();
-console.log('Loaded', Object.keys(trackingStatusStore).length, 'saved tracking statuses');
-
-// ── Persistent notes store ────────────────────────────────────────────────────
-// Key = orderId, value = { note, savedAt }
-const NOTES_FILE = path.join('/tmp', 'order-notes.json');
-function loadNotesStore() {
-  try { if (fs.existsSync(NOTES_FILE)) return JSON.parse(fs.readFileSync(NOTES_FILE, 'utf8')); } 
-  catch(e) { console.error('loadNotesStore error:', e.message); }
-  return {};
-}
-function saveNotesStore(store) {
-  try { fs.writeFileSync(NOTES_FILE, JSON.stringify(store, null, 2)); }
-  catch(e) { console.error('saveNotesStore error:', e.message); }
-}
-let notesStore = loadNotesStore();
-console.log('Loaded', Object.keys(notesStore).length, 'saved notes');
+loadNotesFromDb();
 const EBAY_API_URL = 'https://api.ebay.com/ws/api.dll';
 const {
   EBAY_APP_ID,
@@ -703,8 +720,6 @@ app.get('/api/check-tracking', async (req, res) => {
         carrier,
         savedAt: new Date().toISOString(),
       };
-      saveStatusStore(trackingStatusStore);
-      console.log('Saved status for', trackingNumber, ':', result.status);
     }
     res.json(result);
   } catch (err) {
@@ -712,40 +727,32 @@ app.get('/api/check-tracking', async (req, res) => {
   }
 });
 
-// ── Get all saved tracking statuses ──────────────────────────────────────────
+// ── Tracking statuses (in-memory only, re-checked on every sync) ──────────────
 app.get('/api/tracking-statuses', (req, res) => {
   res.json(trackingStatusStore);
 });
 
 app.delete('/api/tracking-statuses', (req, res) => {
   trackingStatusStore = {};
-  saveStatusStore(trackingStatusStore);
   res.json({ ok: true, cleared: true });
 });
 
-// ── Manually save a tracking status (called from frontend after manual confirm) 
 app.post('/api/tracking-statuses', (req, res) => {
   const { trackingNumber, status, deliveryDate, carrier } = req.body;
   if (!trackingNumber || !status) return res.status(400).json({ error: 'trackingNumber and status required' });
   trackingStatusStore[trackingNumber] = { status, deliveryDate: deliveryDate || null, carrier: carrier || '', savedAt: new Date().toISOString() };
-  saveStatusStore(trackingStatusStore);
   res.json({ ok: true });
 });
 
-// ── Notes store ───────────────────────────────────────────────────────────────
+// ── Notes ─────────────────────────────────────────────────────────────────────
 app.get('/api/notes', (req, res) => {
   res.json(notesStore);
 });
 
-app.post('/api/notes', (req, res) => {
+app.post('/api/notes', async (req, res) => {
   const { orderId, note } = req.body;
   if (!orderId) return res.status(400).json({ error: 'orderId required' });
-  if (note === '' || note === null || note === undefined) {
-    delete notesStore[orderId];
-  } else {
-    notesStore[orderId] = { note, savedAt: new Date().toISOString() };
-  }
-  saveNotesStore(notesStore);
+  await saveNote(orderId, note);
   res.json({ ok: true });
 });
 
