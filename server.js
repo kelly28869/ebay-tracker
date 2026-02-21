@@ -162,11 +162,12 @@ function getDeliveryStatus(order, transactions, allTracking) {
   return 'pending';
 }
 
-// ── Scrape eBay order page for plain-text status sentences ──────────────────
-// eBay order page shows these exact sentences in the stepper:
-//   "Your item was delivered."        → Delivered
-//   "A tracking number was provided." → In Transit
-//   Neither present                   → Pending
+// ── Scrape eBay order page delivery info section ────────────────────────────
+// Looks for these labels in the delivery info section:
+//   "Delivered on"  → delivered  (date = delivery date, shown blank in table)
+//   "Arriving by"   → transit    (date = expected delivery date)
+//   "Arrives"       → pending    (date = estimated arrival)
+// Returns { status, deliveryDate } where deliveryDate is the text after the label.
 async function scrapeOrderPageStatus(orderId) {
   if (!EBAY_USER_TOKEN) return null;
 
@@ -186,24 +187,46 @@ async function scrapeOrderPageStatus(orderId) {
     });
 
     const html = resp.data;
-
     console.log('Order', orderId, '→ page length:', html.length);
 
-    // Check for exact eBay status sentences — most specific first
-    if (html.includes('Your item was delivered.')) {
-      console.log('Order', orderId, '→ DELIVERED (found "Your item was delivered.")');
-      return 'delivered';
+    // Strip HTML tags for clean text matching, collapse whitespace
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+
+    // Helper: extract the date string that immediately follows a label.
+    // eBay formats: "Delivered on Jan 15" / "Arriving by Feb 3" / "Arrives Feb 10–14"
+    // We grab up to 30 chars after the keyword and trim.
+    function extractDate(label) {
+      const idx = text.indexOf(label);
+      if (idx === -1) return null;
+      const after = text.slice(idx + label.length, idx + label.length + 40).trim();
+      // Take up to the next sentence-ending punctuation or long gap
+      const dateText = after.split(/[.!?|]{1}/)[0].trim();
+      return dateText || null;
     }
 
-    if (html.includes('A tracking number was provided.')) {
-      console.log('Order', orderId, '→ TRANSIT (found "A tracking number was provided.")');
-      return 'transit';
+    // Check most-specific first: "Delivered on" before "Arrives"
+    if (text.includes('Delivered on')) {
+      const date = extractDate('Delivered on');
+      console.log('Order', orderId, '→ DELIVERED, date:', date);
+      return { status: 'delivered', deliveryDate: null }; // blank for delivered
     }
 
-    // Neither sentence found — order is paid but not yet shipped
-    console.log('Order', orderId, '→ PENDING (no delivery/tracking sentences found)');
-    console.log('DEBUG snippet:', html.slice(0, 600));
-    return 'pending';
+    if (text.includes('Arriving by')) {
+      const date = extractDate('Arriving by');
+      console.log('Order', orderId, '→ TRANSIT, arriving by:', date);
+      return { status: 'transit', deliveryDate: date };
+    }
+
+    if (text.includes('Arrives')) {
+      const date = extractDate('Arrives');
+      console.log('Order', orderId, '→ PENDING, arrives:', date);
+      return { status: 'pending', deliveryDate: date };
+    }
+
+    // Nothing found — log snippet for debugging
+    console.log('Order', orderId, '→ no delivery label found');
+    console.log('DEBUG text snippet:', text.slice(0, 800));
+    return { status: null, deliveryDate: null };
 
   } catch (err) {
     console.error('scrapeOrderPageStatus error for', orderId, ':', err.message);
@@ -225,14 +248,19 @@ async function debugOrderPage(orderId) {
       timeout: 10000,
     });
     const html = resp.data;
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const deliveredIdx = text.indexOf('Delivered on');
+    const arrivingIdx = text.indexOf('Arriving by');
+    const arrivesIdx  = text.indexOf('Arrives');
     return {
       totalLength: html.length,
-      hasDeliveredSentence: html.includes('Your item was delivered.'),
-      hasTrackingSentence: html.includes('A tracking number was provided.'),
-      detectedStatus: html.includes('Your item was delivered.') ? 'delivered'
-                    : html.includes('A tracking number was provided.') ? 'transit'
-                    : 'pending',
-      first800: html.slice(0, 800),
+      hasDeliveredOn:  deliveredIdx >= 0,
+      hasArrivingBy:   arrivingIdx >= 0,
+      hasArrives:      arrivesIdx >= 0,
+      deliveredOnSnippet: deliveredIdx >= 0 ? text.slice(deliveredIdx, deliveredIdx + 60) : null,
+      arrivingBySnippet:  arrivingIdx >= 0 ? text.slice(arrivingIdx, arrivingIdx + 60) : null,
+      arrivesSnippet:     arrivesIdx >= 0  ? text.slice(arrivesIdx,  arrivesIdx + 60)  : null,
+      textFirst800: text.slice(0, 800),
     };
   } catch(err) {
     return { error: err.message };
@@ -428,11 +456,11 @@ app.get('/api/order-status', async (req, res) => {
   const { orderId } = req.query;
   if (!orderId) return res.status(400).json({ error: 'orderId required' });
   try {
-    const status = await scrapeOrderPageStatus(orderId);
-    if (status === null) {
-      return res.json({ status: 'unknown', message: 'Could not read eBay order page — may need browser session' });
+    const result = await scrapeOrderPageStatus(orderId);
+    if (!result || result.status === null) {
+      return res.json({ status: 'unknown', deliveryDate: null, message: 'Could not read eBay order page' });
     }
-    res.json({ status, orderId });
+    res.json({ status: result.status, deliveryDate: result.deliveryDate || null, orderId });
   } catch (err) {
     res.status(500).json({ error: err.message, status: 'error' });
   }

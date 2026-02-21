@@ -153,6 +153,7 @@
   .status.label{color:#5b21b6;background:#ede9fe;}
   .status.pending{color:var(--muted);background:var(--surface2);border:1px solid var(--border);}
   .delivered-date{font-size:10px;color:var(--delivered);margin-top:3px;font-family:'DM Mono',monospace;opacity:0.8;}
+  .delivery-date-val{font-size:12px;color:var(--transit);font-family:'DM Mono',monospace;font-weight:500;}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
   .status.transit::before{animation:pulse 1.8s infinite;}
 
@@ -263,6 +264,7 @@
           <th id="th-carrier" onclick="sortBy('carrier')">Carrier</th>
           <th>Tracking # <small style="font-weight:400;color:var(--muted);font-size:9px;">(click to verify status)</small></th>
           <th id="th-status" onclick="sortBy('status')">Status</th>
+          <th id="th-deliveryDate">Delivery Date</th>
           <th id="th-date" onclick="sortBy('date')">Ordered</th>
           <th id="th-price" onclick="sortBy('price')">Paid</th>
         </tr>
@@ -463,20 +465,33 @@ async function fetchOrders() {
   const btn = document.getElementById('syncBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Syncing…';
   const val = document.getElementById('daysSelect').value;
-  const daysBack = val === 'yesterday' ? 2 : parseInt(val, 10);
   const yesterdayStr = new Date(today.getFullYear(), today.getMonth(), today.getDate()-1).toDateString();
+
+  // Build explicit date range so "Today" means midnight→now, not last 24h
+  let fetchUrl;
+  if (val === '1') {
+    // Today: midnight of today → right now
+    const from = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+    fetchUrl = `/api/orders?fromDate=${from.toISOString()}&toDate=${today.toISOString()}`;
+  } else if (val === 'yesterday') {
+    // Yesterday: midnight → 23:59:59
+    const yDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const from  = new Date(yDate.getFullYear(), yDate.getMonth(), yDate.getDate(), 0, 0, 0);
+    const to    = new Date(yDate.getFullYear(), yDate.getMonth(), yDate.getDate(), 23, 59, 59);
+    fetchUrl = `/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`;
+  } else {
+    const daysBack = parseInt(val, 10);
+    const from = new Date(today);
+    from.setDate(from.getDate() - daysBack);
+    fetchUrl = `/api/orders?fromDate=${from.toISOString()}&toDate=${today.toISOString()}`;
+  }
+
   try {
-    const res = await fetch(`/api/orders?daysBack=${daysBack}`);
+    const res = await fetch(fetchUrl);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
     allOrders = data.orders
-      .filter(o => {
-        if (val === 'yesterday') {
-          const d = o.createdDate ? new Date(o.createdDate) : null;
-          return d && d.toDateString() === yesterdayStr;
-        }
-        return true;
-      })
+      .filter(() => true)
       .map(o => ({
         orderId: o.extendedOrderId || o.orderId,
         rawOrderId: o.orderId,
@@ -488,6 +503,7 @@ async function fetchOrders() {
         carrier: o.tracking[0]?.carrier || '',
         status: o.deliveryStatus,
         confirmedStatus: null,
+        deliveryDate: null,
         date: o.createdDate,
         dateObj: o.createdDate ? new Date(o.createdDate) : null,
         actualDeliveryTime: o.actualDeliveryTime || null,
@@ -528,6 +544,7 @@ async function fetchOrdersForDate(date) {
       carrier: o.tracking[0]?.carrier || '',
       status: o.deliveryStatus,
       confirmedStatus: null,
+      deliveryDate: null,
       date: o.createdDate,
       dateObj: o.createdDate ? new Date(o.createdDate) : null,
       actualDeliveryTime: o.actualDeliveryTime || null,
@@ -620,7 +637,7 @@ function renderTable() {
   const tbody = document.getElementById('tableBody');
 
   if (!page.length) {
-    tbody.innerHTML=`<tr><td colspan="8"><div class="empty-state"><div class="icon">🔍</div><div class="title">No orders found</div><div class="sub">Try adjusting your search, filter, or date</div></div></td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="9"><div class="empty-state"><div class="icon">🔍</div><div class="title">No orders found</div><div class="sub">Try adjusting your search, filter, or date</div></div></td></tr>`;
     document.getElementById('paginationBar').style.display='none';
     document.getElementById('orderCountLabel').textContent='';
     return;
@@ -678,9 +695,11 @@ function renderTable() {
       <td id="statusCell_${globalIdx}">
         <span class="status ${eff}">${statusLabels[eff]||eff}</span>
         ${o.confirmedStatus ? '<span class="verified-tag">✓ eBay</span>' : ''}
-        ${eff==='delivered' && o.actualDeliveryTime
-          ? `<div class="delivered-date">📦 ${new Date(o.actualDeliveryTime).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>`
-          : ''}
+      </td>
+      <td id="deliveryDateCell_${globalIdx}">
+        ${eff !== 'delivered' && o.deliveryDate
+          ? `<span class="delivery-date-val">${o.deliveryDate}</span>`
+          : '<span class="no-val">—</span>'}
       </td>
       <td><span class="no-val">${dateStr}</span></td>
       <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
@@ -733,6 +752,7 @@ async function checkOrderStatus(event, orderIdx, rawOrderId) {
 
     if (data.status && data.status !== 'unknown' && data.status !== 'error') {
       allOrders[orderIdx].confirmedStatus = data.status;
+      allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
       recomputeStats();
 
       // Update status cell
@@ -741,14 +761,23 @@ async function checkOrderStatus(event, orderIdx, rawOrderId) {
         sc.innerHTML = `<span class="status ${data.status}">${statusLabels[data.status] || data.status}</span> <span class="verified-tag">✓ eBay</span>`;
       }
 
+      // Update delivery date cell — blank if delivered, show date otherwise
+      const dc = document.getElementById('deliveryDateCell_' + orderIdx);
+      if (dc) {
+        dc.innerHTML = data.status !== 'delivered' && data.deliveryDate
+          ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
+          : '<span class="no-val">—</span>';
+      }
+
       btn.classList.remove('checking');
       btn.classList.add('checked');
       btn.textContent = '✓ verified';
 
+      const dateHint = data.deliveryDate ? ` (${data.deliveryDate})` : '';
       const msg = {
         delivered: `✓ eBay confirms DELIVERED — order ${rawOrderId}`,
-        transit: `📦 eBay confirms IN TRANSIT — order ${rawOrderId}`,
-        pending: `⏳ eBay confirms PENDING — order ${rawOrderId}`,
+        transit: `📦 In Transit — arriving${dateHint}`,
+        pending: `⏳ Pending — estimated arrival${dateHint}`,
       }[data.status] || `Status: ${data.status}`;
       showAlert(data.status === 'delivered' ? 'success' : 'info', msg);
 
