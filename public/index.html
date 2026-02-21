@@ -162,10 +162,15 @@
   .qty-badge{font-size:12px;font-weight:600;color:var(--text2);font-family:'DM Mono',monospace;}
   .delivery-date-val{font-size:12px;color:var(--transit);font-family:'DM Mono',monospace;font-weight:500;}
   .note-cell{min-width:140px;max-width:200px;}
+  .note-wrap{position:relative;}
   .note-input{width:100%;border:none;background:transparent;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text2);padding:4px 6px;border-radius:4px;outline:none;resize:none;line-height:1.4;transition:background 0.15s,box-shadow 0.15s;}
   .note-input:hover{background:var(--surface2);}
   .note-input:focus{background:var(--surface2);box-shadow:0 0 0 2px rgba(26,86,160,0.15);}
   .note-input::placeholder{color:var(--muted);font-style:italic;}
+  .note-save-btn{display:none;margin-top:4px;padding:3px 10px;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;border:none;border-radius:4px;background:var(--accent2);color:#fff;cursor:pointer;transition:all 0.15s;}
+  .note-save-btn:hover{background:#154a8a;}
+  .note-save-btn.saved{background:var(--delivered);pointer-events:none;}
+  .note-wrap:focus-within .note-save-btn{display:inline-block;}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
   .status.transit::before{animation:pulse 1.8s infinite;}
 
@@ -616,6 +621,7 @@ async function fetchOrders() {
         status: o.deliveryStatus,
         confirmedStatus: null,
         deliveryDate: null,
+        note: '',
         quantity: o.totalQuantity || o.items.reduce((s,i)=>s+(i.quantity||1),0) || 1,
         date: o.createdDate,
         dateObj: o.createdDate ? new Date(o.createdDate) : null,
@@ -623,6 +629,17 @@ async function fetchOrders() {
         price: o.totalAmount,
         currency: o.currency,
       }));
+
+    // Load notes first so they appear immediately in the table
+    try {
+      const nr = await fetch('/api/notes');
+      const notesData = await nr.json();
+      allOrders.forEach(o => {
+        const id = o.extendedOrderId || o.orderId;
+        if (notesData[id]) o.note = notesData[id].note;
+      });
+    } catch(e) {}
+
     recomputeStats();
     currentPage = 1;
     renderTable();
@@ -660,6 +677,7 @@ async function fetchOrdersForDate(fromDate, toDate) {
       status: o.deliveryStatus,
       confirmedStatus: null,
       deliveryDate: null,
+      note: '',
       quantity: o.totalQuantity || o.items.reduce((s,i)=>s+(i.quantity||1),0) || 1,
       date: o.createdDate,
       dateObj: o.createdDate ? new Date(o.createdDate) : null,
@@ -667,6 +685,17 @@ async function fetchOrdersForDate(fromDate, toDate) {
       price: o.totalAmount,
       currency: o.currency,
     }));
+
+    // Load notes first so they appear immediately
+    try {
+      const nr = await fetch('/api/notes');
+      const notesData = await nr.json();
+      allOrders.forEach(o => {
+        const id = o.extendedOrderId || o.orderId;
+        if (notesData[id]) o.note = notesData[id].note;
+      });
+    } catch(e) {}
+
     recomputeStats();
     currentPage = 1;
     renderTable();
@@ -690,10 +719,19 @@ async function applyStoredStatuses() {
     const store = await res.json();
     const notesData = await nr.json().catch(() => ({}));
 
-    // Apply saved notes to order objects
-    allOrders.forEach(o => {
+    // Apply saved notes to order objects and update DOM
+    allOrders.forEach((o, idx) => {
       const orderId = o.extendedOrderId || o.orderId;
-      if (notesData[orderId]) o.note = notesData[orderId].note;
+      if (notesData[orderId]) {
+        o.note = notesData[orderId].note;
+        // Update textarea in DOM if already rendered
+        const nc = document.querySelector(`textarea[data-orderid="${orderId}"]`);
+        if (nc && !nc.value) {
+          nc.value = o.note;
+          nc.style.height = 'auto';
+          nc.style.height = nc.scrollHeight + 'px';
+        }
+      }
     });
 
     let applied = 0;
@@ -768,10 +806,19 @@ async function autoCheckAllTracking(savedStore) {
   console.log('Auto-check complete.');
 }
 
+async function saveNoteBtn(btn) {
+  const textarea = btn.previousElementSibling;
+  btn.textContent = '…';
+  btn.disabled = true;
+  await saveNote(textarea);
+  btn.classList.add('saved');
+  btn.textContent = '✓ Saved';
+  btn.disabled = false;
+}
+
 async function saveNote(textarea) {
   const orderId = textarea.dataset.orderid;
   const note = textarea.value.trim();
-  // Update in allOrders so it persists across re-renders
   const o = allOrders.find(o => (o.extendedOrderId || o.orderId) === orderId);
   if (o) o.note = note;
   try {
@@ -926,11 +973,13 @@ function renderTable() {
           : '<span class="no-val">—</span>'}
       </td>
       <td class="note-cell">
-        <textarea class="note-input" rows="1" placeholder="Add note…"
-          data-orderid="${(o.extendedOrderId||o.orderId)}"
-          onblur="saveNote(this)"
-          oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
-        >${o.note ? o.note.replace(/</g,'&lt;') : ''}</textarea>
+        <div class="note-wrap">
+          <textarea class="note-input" rows="1" placeholder="Add note…"
+            data-orderid="${(o.extendedOrderId||o.orderId)}"
+            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';this.nextElementSibling.classList.remove('saved');this.nextElementSibling.textContent='Save';"
+          >${o.note ? o.note.replace(/</g,'&lt;') : ''}</textarea>
+          <button class="note-save-btn" onclick="saveNoteBtn(this)">Save</button>
+        </div>
       </td>
       <td><span class="no-val">${dateStr}</span></td>
       <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
