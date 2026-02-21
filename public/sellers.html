@@ -172,8 +172,10 @@ let sellersData = [];
 let maxSpent = 0;
 let currentDays = 30;
 let currentLabel = 'Last 30 days';
-let ordersCache = {}; // key = days, value = { orders, fetchedAt }
+let ordersCache = {}; // key = days, value = { orders, savedStatuses, fetchedAt }
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+let masterOrders = null; // all 89 days of orders — slice for smaller ranges
+let savedStatuses = {};
 
 function setTimeframe(days, label) {
   currentDays = days;
@@ -190,50 +192,111 @@ function showAlert(type, msg) {
   if (type !== 'error') setTimeout(() => { el.style.display = 'none'; }, 4000);
 }
 
+function showSkeleton() {
+  const container = document.getElementById('sellersContainer');
+  const skeletonCard = () => `
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px 20px;display:flex;align-items:center;gap:14px;margin-bottom:12px;">
+      <div style="width:24px;height:14px;background:var(--border);border-radius:3px;animation:pulse 1.2s ease-in-out infinite;"></div>
+      <div style="width:36px;height:36px;border-radius:50%;background:var(--border);animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;"></div>
+      <div style="flex:1;">
+        <div style="height:12px;width:40%;background:var(--border);border-radius:3px;margin-bottom:6px;animation:pulse 1.2s ease-in-out infinite;"></div>
+        <div style="height:10px;width:60%;background:var(--border);border-radius:3px;animation:pulse 1.2s ease-in-out 0.2s infinite;"></div>
+      </div>
+      <div style="text-align:right;">
+        <div style="height:14px;width:70px;background:var(--border);border-radius:3px;margin-bottom:6px;animation:pulse 1.2s ease-in-out infinite;"></div>
+        <div style="height:10px;width:40px;background:var(--border);border-radius:3px;margin-left:auto;animation:pulse 1.2s ease-in-out 0.1s infinite;"></div>
+      </div>
+    </div>`;
+  container.innerHTML = `<style>@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}</style>` + Array(6).fill(0).map(skeletonCard).join('');
+}
+
+// Filter master orders to a time window
+function filterOrdersByDays(orders, days) {
+  if (!days) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    return orders.filter(o => new Date(o.createdDate) >= today);
+  }
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  return orders.filter(o => new Date(o.createdDate) >= cutoff);
+}
+
 async function loadSellers(forceRefresh = false) {
   const btn = document.getElementById('syncBtn');
-  const container = document.getElementById('sellersContainer');
 
-  // Use cache if available and fresh
-  const cached = ordersCache[currentDays];
-  if (!forceRefresh && cached && (Date.now() - cached.fetchedAt < CACHE_TTL)) {
-    processOrders(cached.orders, cached.savedStatuses);
-    showAlert('info', `Showing cached data · click ↻ Refresh to update`);
+  // If we already have master orders, just filter and render instantly
+  if (!forceRefresh && masterOrders) {
+    const filtered = filterOrdersByDays(masterOrders, currentDays);
+    processOrders(filtered, savedStatuses);
     return;
   }
 
+  // Show skeleton immediately
+  showSkeleton();
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Loading…';
-  container.innerHTML = '<div class="loading-overlay"><div class="big-spinner"></div><p>Fetching orders…</p></div>';
 
   try {
-    const to = new Date();
-    const from = new Date();
-    if (currentDays === 0) {
-      from.setHours(0, 0, 0, 0);
-    } else {
-      from.setDate(from.getDate() - currentDays);
-    }
-
+    // Always fetch full 89 days — server caches this, so second load is instant
+    // Switching timeframes (7d/30d/60d) filters client-side with no extra API calls
     const [res, sr] = await Promise.all([
-      fetch(`/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`),
+      fetch(`/api/orders?daysBack=89`),
       fetch('/api/tracking-statuses').catch(() => ({ json: () => ({}) }))
     ]);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
-    const savedStatuses = await sr.json().catch(() => ({}));
+    savedStatuses = await sr.json().catch(() => ({}));
+    masterOrders = data.orders; // cache all 89 days
 
-    // Cache the result
-    ordersCache[currentDays] = { orders: data.orders, savedStatuses, fetchedAt: Date.now() };
-    processOrders(data.orders, savedStatuses);
-    showAlert('success', `✓ Loaded ${data.orders.length} orders from ${sellersData.length} sellers`);
+    const filtered = filterOrdersByDays(masterOrders, currentDays);
+    processOrders(filtered, savedStatuses);
+    showAlert('success', `✓ Loaded ${data.orders.length} orders`);
+
+    // Auto-check any tracking numbers not yet in the saved store (same as main page)
+    autoCheckTracking(masterOrders, savedStatuses);
   } catch(err) {
     showAlert('error', `✗ ${err.message}`);
-    container.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><h3>Error loading data</h3><p>' + err.message + '</p></div>';
+    document.getElementById('sellersContainer').innerHTML =
+      '<div class="empty"><div class="empty-icon">⚠️</div><h3>Error loading data</h3><p>' + err.message + '</p></div>';
   } finally {
     btn.disabled = false;
     btn.textContent = '↻ Refresh';
   }
+}
+
+async function autoCheckTracking(orders, store) {
+  // Collect unique tracking numbers not yet saved
+  const toCheck = [];
+  const seen = new Set();
+  for (const o of orders) {
+    for (const t of (o.tracking || [])) {
+      const tn = (t.trackingNumber || '').trim();
+      const carrier = (t.carrier || t.carrierCode || '').toUpperCase();
+      if (tn && !store[tn] && !seen.has(tn)) {
+        seen.add(tn);
+        toCheck.push({ tn, carrier });
+      }
+    }
+  }
+  if (toCheck.length === 0) return;
+  console.log('Sellers: auto-checking', toCheck.length, 'tracking numbers…');
+
+  const BATCH = 30;
+  for (let i = 0; i < toCheck.length; i += BATCH) {
+    const batch = toCheck.slice(i, i + BATCH);
+    await Promise.all(batch.map(async ({ tn, carrier }) => {
+      try {
+        const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(tn)}`);
+        const data = await res.json();
+        if (data.status && data.status !== 'unknown' && data.status !== 'error') {
+          savedStatuses[tn] = { status: data.status, deliveryDate: data.deliveryDate || null };
+        }
+      } catch(e) {}
+    }));
+    // Re-render with updated statuses after each batch
+    const filtered = filterOrdersByDays(masterOrders, currentDays);
+    processOrders(filtered, savedStatuses);
+  }
+  console.log('Sellers: auto-check complete.');
 }
 
 function processOrders(orders, savedStatuses) {

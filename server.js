@@ -547,11 +547,35 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ── Server-side order cache ───────────────────────────────────────────────────
+let orderCache = null;
+let orderCacheExpiry = 0;
+const ORDER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(daysBack, fromDate, toDate) {
+  // Normalize: if requesting ~89 days worth of data, use a stable key
+  if (fromDate && toDate) {
+    const diffMs = new Date(toDate) - new Date(fromDate);
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays >= 85) return 'full89';
+  }
+  if (daysBack >= 85) return 'full89';
+  if (fromDate && toDate) return `${fromDate.slice(0,10)}|${toDate.slice(0,10)}`;
+  return `days:${daysBack}`;
+}
+
 app.get('/api/orders', async (req, res) => {
   try {
     if (!EBAY_USER_TOKEN) return res.status(401).json({ error: 'EBAY_USER_TOKEN not configured in .env' });
     const { fromDate, toDate } = req.query;
     const daysBack = parseInt(req.query.daysBack || '1', 10);
+    const cacheKey = getCacheKey(daysBack, fromDate, toDate);
+
+    if (orderCache && orderCache.key === cacheKey && Date.now() < orderCacheExpiry) {
+      console.log('Serving orders from cache (' + cacheKey + ')');
+      return res.json(orderCache.data);
+    }
+
     const rawOrders = await getAllOrders(daysBack, fromDate, toDate);
     const orders = rawOrders.map(parseOrder);
     const stats = {
@@ -562,7 +586,13 @@ app.get('/api/orders', async (req, res) => {
       pending: orders.filter(o => o.deliveryStatus === 'pending').length,
       totalSpent: orders.reduce((s, o) => s + o.totalAmount, 0).toFixed(2),
     };
-    res.json({ orders, stats, fetchedAt: new Date().toISOString() });
+    const responseData = { orders, stats, fetchedAt: new Date().toISOString() };
+
+    orderCache = { key: cacheKey, data: responseData };
+    orderCacheExpiry = Date.now() + ORDER_CACHE_TTL;
+    console.log('Orders cached (' + cacheKey + ') for 5 min');
+
+    res.json(responseData);
   } catch (err) {
     console.error('Error fetching orders:', err.message);
     res.status(500).json({ error: err.message });
