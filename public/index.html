@@ -406,7 +406,7 @@ function renderCal() {
     });
 
   } else {
-    // ── Day picker with range support ────────────────────────────────────────
+    // ── Day picker ───────────────────────────────────────────────────────────
     label.textContent = MONTHS[calViewMonth] + ' ' + calViewYear;
     grid.className = 'cal-grid';
     ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
@@ -418,63 +418,79 @@ function renderCal() {
       const el = document.createElement('div'); el.className = 'cal-day empty'; grid.appendChild(el);
     }
     for (let d = 1; d <= daysInMonth; d++) {
-      const el = document.createElement('div');
       const thisDate = new Date(calViewYear, calViewMonth, d);
       const isFuture = thisDate > today;
       const isToday  = thisDate.toDateString() === todayStr;
-
-      // Determine range classes
-      let cls = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'');
-      if (!isFuture && calRangeStart) {
-        const hoverEnd = calHoverDate || calRangeEnd;
-        const lo = new Date(Math.min(+calRangeStart, +(hoverEnd||calRangeStart)));
-        const hi = new Date(Math.max(+calRangeStart, +(hoverEnd||calRangeStart)));
-        const isStart = thisDate.toDateString() === lo.toDateString();
-        const isEnd   = thisDate.toDateString() === hi.toDateString();
-        const inRange = thisDate >= lo && thisDate <= hi;
-        if (isStart) cls += ' range-start';
-        if (isEnd)   cls += ' range-end';
-        if (inRange && !isStart && !isEnd) cls += ' in-range';
-      }
-
-      el.className = cls;
+      const el = document.createElement('div');
+      el.className = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'');
       el.textContent = d;
+      el.dataset.ts = +thisDate; // store timestamp for in-place class updates
       if (!isFuture) {
         el.onclick = () => calDayClick(new Date(calViewYear, calViewMonth, d));
-        // Only update hover state, don't re-render on mouseenter to avoid destroying elements mid-click
-        el.onmouseenter = () => {
-          if (!calRangeStart || calRangeEnd) return; // only preview hover when picking range end
-          calHoverDate = new Date(calViewYear, calViewMonth, d);
-          renderCal();
-        };
       }
       grid.appendChild(el);
     }
-    // Clear hover when leaving the whole grid (not per-cell, avoids destroying elements mid-click)
-    grid.onmouseleave = () => {
-      if (calHoverDate) { calHoverDate = null; renderCal(); }
+
+    // Hover: update classes in-place — NEVER re-render (re-render destroys DOM mid-click)
+    grid.onmousemove = (e) => {
+      const dayEl = e.target.closest('.cal-day:not(.future):not(.empty)');
+      if (!dayEl || !dayEl.dataset.ts) return;
+      const hov = new Date(+dayEl.dataset.ts);
+      if (calHoverDate && calHoverDate.toDateString() === hov.toDateString()) return;
+      calHoverDate = hov;
+      updateRangeClasses();
     };
+    grid.onmouseleave = () => {
+      calHoverDate = null;
+      updateRangeClasses();
+    };
+
+    // Apply initial range classes
+    updateRangeClasses();
   }
   updateCalHint();
 }
 
+// Update range/hover highlight classes IN PLACE — never re-render the grid
+function updateRangeClasses() {
+  const grid = document.getElementById('calGrid');
+  if (!grid) return;
+  const days = grid.querySelectorAll('.cal-day[data-ts]');
+  const anchor = calRangeStart;
+  const endPt  = calRangeEnd || (anchor ? calHoverDate : null);
+  const lo = anchor && endPt ? new Date(Math.min(+anchor, +endPt)) : anchor;
+  const hi = anchor && endPt ? new Date(Math.max(+anchor, +endPt)) : anchor;
+
+  days.forEach(el => {
+    const ts = +el.dataset.ts;
+    const d  = new Date(ts);
+    // Remove all range classes
+    el.classList.remove('range-start','range-end','in-range');
+    if (!lo) return;
+    const isStart = lo && d.toDateString() === lo.toDateString();
+    const isEnd   = hi && d.toDateString() === hi.toDateString();
+    const inRange = lo && hi && d >= lo && d <= hi;
+    if (isStart) el.classList.add('range-start');
+    if (isEnd)   el.classList.add('range-end');
+    if (inRange && !isStart && !isEnd) el.classList.add('in-range');
+  });
+}
+
 function calDayClick(date) {
   if (!calRangeStart || calRangeEnd) {
-    // Start fresh selection
+    // Start a fresh selection
     calRangeStart = date;
     calRangeEnd   = null;
   } else {
-    // Second click — set end (allow clicking same day for single-day)
-    if (date < calRangeStart) {
-      calRangeEnd   = calRangeStart;
-      calRangeStart = date;
-    } else {
-      calRangeEnd = date;
+    // Second click — complete the range
+    calRangeEnd = date;
+    if (calRangeEnd < calRangeStart) {
+      [calRangeStart, calRangeEnd] = [calRangeEnd, calRangeStart];
     }
   }
-  // Enable Apply button whenever we have at least a start date
   document.getElementById('calApplyBtn').disabled = false;
-  renderCal();
+  updateRangeClasses();
+  updateCalHint();
 }
 
 function updateCalHint() {
