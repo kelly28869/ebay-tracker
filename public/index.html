@@ -706,7 +706,57 @@ async function applyStoredStatuses() {
       recomputeStats();
       console.log('Auto-applied', applied, 'saved tracking statuses');
     }
+    // Now auto-check anything we don't have a saved status for
+    autoCheckAllTracking(store);
   } catch(e) { console.error('applyStoredStatuses error:', e.message); }
+}
+
+// ── Auto-check all tracking numbers after sync ────────────────────────────────
+// Fires in background — won't block the UI. Skips orders already saved.
+async function autoCheckAllTracking(savedStore) {
+  const toCheck = allOrders.filter(o =>
+    o.trackingNumber &&
+    !savedStore[o.trackingNumber] // skip already-known statuses
+  );
+  if (toCheck.length === 0) return;
+  console.log('Auto-checking', toCheck.length, 'tracking numbers...');
+
+  for (const o of toCheck) {
+    const idx = allOrders.indexOf(o);
+    try {
+      const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(o.carrier)}&trackingNumber=${encodeURIComponent(o.trackingNumber)}`);
+      const data = await res.json();
+      if (!data.status || data.status === 'unknown' || data.status === 'error') continue;
+
+      // Update order object
+      o.confirmedStatus = data.status;
+      o.deliveryDate = data.deliveryDate || null;
+
+      // Update status cell
+      const sc = document.getElementById('statusCell_' + idx);
+      if (sc) {
+        const label = data.status === 'delivered' ? 'Delivered' : data.status === 'transit' ? 'In Transit' : data.status;
+        const cls   = data.status === 'delivered' ? 'delivered' : data.status === 'transit' ? 'transit' : 'pending';
+        sc.innerHTML = `<span class="status ${cls}">${label}</span> <span class="verified-tag">✓ usps</span>`;
+      }
+
+      // Update delivery date cell
+      const dc = document.getElementById('deliveryDateCell_' + idx);
+      if (dc) {
+        dc.innerHTML = data.deliveryDate
+          ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
+          : '<span class="no-val">—</span>';
+      }
+
+      recomputeStats();
+    } catch(e) {
+      console.error('Auto-check failed for', o.trackingNumber, ':', e.message);
+    }
+
+    // Small delay between requests to avoid hammering the API
+    await new Promise(r => setTimeout(r, 300));
+  }
+  console.log('Auto-check complete.');
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────

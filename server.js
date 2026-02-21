@@ -502,7 +502,7 @@ async function scrapeCarrierStatus(carrier, trackingNumber) {
       }
     );
     const data = resp.data;
-    console.log('USPS tracking response for', trackingNumber, ':', JSON.stringify(data).slice(0, 500));
+    console.log('USPS tracking response for', trackingNumber, ':', JSON.stringify(data).slice(0, 600));
 
     const eventType = (data.eventType || '').toUpperCase();
     const category  = (data.statusCategory || '').toUpperCase();
@@ -510,6 +510,15 @@ async function scrapeCarrierStatus(carrier, trackingNumber) {
     if (eventType === 'DELIVERED' || category === 'DELIVERED') {
       status = 'delivered';
       delivered = true;
+      // Pull actual delivery date from the most recent scan event
+      const events = data.trackSummary?.TrackDetail || data.trackDetail || [];
+      const firstEvent = Array.isArray(events) ? events[0] : null;
+      if (data.eventDate) {
+        try {
+          deliveryDate = new Date(data.eventDate)
+            .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch {}
+      }
     } else if (eventType || data.expectedDeliveryDate) {
       status = 'transit';
       if (data.expectedDeliveryDate) {
