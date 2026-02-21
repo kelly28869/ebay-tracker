@@ -318,6 +318,8 @@ async function checkStatusViaTradingAPI(orderId) {
 // ── Debug endpoint: returns raw HTML snippet around stepper icons ─────────────
 // Call GET /api/debug-order?orderId=XXX to see what eBay actually returns
 async function debugOrderPage(orderId) {
+  const out = {};
+  // 1. Trading API — dump entire raw order
   try {
     const xml = `<?xml version="1.0" encoding="utf-8"?>
 <GetOrdersRequest xmlns="urn:ebay:apis:eBLBaseComponents">
@@ -330,22 +332,35 @@ async function debugOrderPage(orderId) {
     const resp = result.GetOrdersResponse;
     const orderArr = resp && resp.OrderArray && resp.OrderArray.Order;
     const order = orderArr ? (Array.isArray(orderArr) ? orderArr[0] : orderArr) : null;
-    return {
+    out.tradingAPI = {
       ack: resp && resp.Ack,
-      orderStatus: order && order.OrderStatus,
-      shippedTime: order && order.ShippedTime,
-      actualDeliveryTime: order && order.ActualDeliveryTime,
-      checkoutStatus: order && order.CheckoutStatus,
-      shippingDetails: order && order.ShippingDetails && order.ShippingDetails.ShippingServiceSelected,
-      trackingCount: (() => {
-        if (!order) return 0;
-        const s = order.ShippingDetails && order.ShippingDetails.ShipmentTrackingDetails;
-        return s ? (Array.isArray(s) ? s.length : 1) : 0;
-      })(),
+      rawOrder: order, // full dump so we can see every field
     };
   } catch(err) {
-    return { error: err.message };
+    out.tradingAPIError = err.message;
   }
+  // 2. Fulfillment REST API
+  try {
+    const restResp = await axios.get(
+      `https://api.ebay.com/sell/fulfillment/v1/order/${encodeURIComponent(orderId)}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${EBAY_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+        },
+        timeout: 10000,
+        validateStatus: s => true,
+      }
+    );
+    out.fulfillmentAPI = {
+      status: restResp.status,
+      data: restResp.data,
+    };
+  } catch(err) {
+    out.fulfillmentAPIError = err.message;
+  }
+  return out;
 }
 
 function parseOrder(order) {
@@ -433,25 +448,12 @@ async function scrapeCarrierStatus(carrier, trackingNumber) {
     'Accept-Language': 'en-US,en;q=0.5',
   };
 
-  // Helper: parse carrier HTML for real status.
-  // Key rule: "expected delivery" / "estimated delivery" / "by [date]" = NOT delivered yet = transit.
-  // Only explicit past-tense "Delivered" with no future-date context = delivered.
-  function parseCarrierHtml(html, carrier) {
-    const h = html.toLowerCase();
-    // Strip out "expected delivery", "estimated delivery", "scheduled delivery" — these are NOT delivered
-    const hasExpectedDelivery = /expected delivery|estimated delivery|scheduled delivery|expected by|arrives by|delivery by|by [a-z]+ \d/i.test(html);
-    const hasLabelCreated = /label created|shipping label created|pre-shipment|pre shipment/i.test(html);
-    const hasOutForDelivery = /out for delivery/i.test(html);
-    // "Delivered" only counts if it's NOT preceded/followed by future-delivery language
-    const hasDelivered = /delivered/i.test(html)
-      && !/attempted delivery|delivery attempt|delivery exception|failed delivery/i.test(html)
-      && !hasExpectedDelivery;
-
-    if (hasDelivered && !hasExpectedDelivery) return 'delivered';
-    if (hasOutForDelivery) return 'out_for_delivery';
-    if (hasExpectedDelivery) return 'transit'; // has a future delivery date = still in transit
-    if (/in transit|in-transit|on the way|departed|arrived|accepted|picked up|processed/i.test(html)) return 'transit';
-    if (hasLabelCreated) return 'label';
+  // Parse carrier page using exact phrases:
+  //   "Your item was delivered"  → delivered
+  //   "Expected Delivery by"     → transit
+  function parseCarrierHtml(html) {
+    if (html.includes('Your item was delivered')) return 'delivered';
+    if (html.includes('Expected Delivery by'))    return 'transit';
     return 'unknown';
   }
 

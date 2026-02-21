@@ -809,21 +809,26 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
     const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
     const data = await res.json();
 
-    if (data.delivered) {
+    if (data.status === 'delivered') {
       allOrders[orderIdx].confirmedStatus = 'delivered';
       link.classList.remove('checking'); link.classList.add('is-delivered');
       link.innerHTML = `${trackingNumber} <span class="track-badge delivered">✓ Delivered</span>`;
-      // Update status cell immediately
       const sc = document.getElementById('statusCell_'+orderIdx);
-      if(sc) sc.innerHTML = `<span class="status delivered">Delivered</span>`;
+      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ ${data.carrier||'carrier'}</span>`;
       recomputeStats();
       showAlert('success', `✓ Confirmed delivered: ${trackingNumber}`);
-    } else {
+    } else if (data.status === 'transit') {
       allOrders[orderIdx].confirmedStatus = 'transit';
       link.classList.remove('checking'); link.classList.add('is-transit');
-      link.innerHTML = `${trackingNumber} <span class="track-badge transit">${data.status||'In Transit'}</span>`;
+      link.innerHTML = `${trackingNumber} <span class="track-badge transit">In Transit</span>`;
+      const sc = document.getElementById('statusCell_'+orderIdx);
+      if (sc) sc.innerHTML = `<span class="status transit">In Transit</span> <span class="verified-tag">✓ ${data.carrier||'carrier'}</span>`;
       recomputeStats();
-      // Open carrier site so user can see full details
+      if (data.url) window.open(data.url, '_blank');
+    } else {
+      // unknown — couldn't read page, just open carrier site
+      link.classList.remove('checking');
+      link.textContent = trackingNumber;
       if (data.url) window.open(data.url, '_blank');
     }
   } catch(err) {
