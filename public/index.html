@@ -57,11 +57,24 @@
 
   .header-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 
+  /* Clickable date badge */
   .date-badge {
     font-family: 'DM Mono', monospace; font-size: 11px;
     color: var(--text2); background: var(--surface2);
     border: 1px solid var(--border2); padding: 6px 14px; border-radius: 4px;
+    cursor: pointer; user-select: none;
+    transition: all 0.15s;
+    position: relative;
   }
+  .date-badge:hover { border-color: var(--accent2); color: var(--accent2); background: #f0f6ff; }
+  .date-badge.active-today {
+    background: var(--accent2); color: #fff; border-color: var(--accent2);
+  }
+  .date-badge::after {
+    content: ' ↑ TODAY';
+    font-size: 9px; letter-spacing: 1px; opacity: 0.7;
+  }
+  .date-badge.active-today::after { content: ' ✓ FILTERED'; opacity: 1; }
 
   .days-select {
     background: var(--surface); border: 1px solid var(--border2);
@@ -120,7 +133,7 @@
   .setup-panel a { color: var(--accent2); }
   .setup-panel.hidden { display: none; }
 
-  /* STATS */
+  /* STATS — clickable cards */
   .stats-bar {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -133,13 +146,26 @@
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 20px 22px;
     box-shadow: var(--shadow); transition: box-shadow 0.2s, transform 0.15s;
+    cursor: default;
   }
-  .stat-cell:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+  .stat-cell.clickable { cursor: pointer; }
+  .stat-cell.clickable:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+  .stat-cell.clickable.active {
+    border-color: var(--accent2);
+    box-shadow: 0 0 0 3px rgba(26,86,160,0.15), var(--shadow);
+  }
 
   .stat-label {
     font-size: 11px; font-weight: 600; color: var(--muted);
     text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: space-between;
   }
+  .stat-label .filter-hint {
+    font-size: 9px; opacity: 0; letter-spacing: 0.5px; color: var(--accent2);
+    transition: opacity 0.15s;
+  }
+  .stat-cell.clickable:hover .filter-hint { opacity: 1; }
+  .stat-cell.clickable.active .filter-hint { opacity: 1; content: '✓'; }
 
   .stat-value {
     font-family: 'DM Serif Display', serif;
@@ -192,6 +218,8 @@
     cursor: pointer; user-select: none; transition: color 0.15s;
   }
   th:hover { color: var(--text); }
+  th.sorted { color: var(--accent2); }
+  th.sorted::after { content: ' ↕'; font-size: 10px; }
 
   tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
   tbody tr:last-child { border-bottom: none; }
@@ -233,6 +261,33 @@
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
   .status.transit::before { animation: pulse 1.8s infinite; }
 
+  /* PAGINATION */
+  .pagination {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-top: 1px solid var(--border);
+    background: var(--surface2); flex-wrap: wrap; gap: 10px;
+  }
+  .pagination-info { font-size: 13px; color: var(--muted); }
+  .pagination-info strong { color: var(--text); }
+  .pagination-controls { display: flex; align-items: center; gap: 6px; }
+  .page-btn {
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--text2); padding: 6px 12px; font-size: 13px; font-weight: 500;
+    cursor: pointer; border-radius: 4px; transition: all 0.15s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .page-btn:hover:not(:disabled) { border-color: var(--accent2); color: var(--accent2); background: #f0f6ff; }
+  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .page-btn.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+  .page-size-select {
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--text); padding: 6px 28px 6px 10px; font-size: 12px;
+    outline: none; cursor: pointer; appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+    border-radius: 4px; font-family: 'DM Sans', sans-serif;
+  }
+
   /* SPINNER */
   .spinner {
     display: inline-block; width: 14px; height: 14px;
@@ -271,13 +326,15 @@
     <p>eBay Buyer Dashboard — Live</p>
   </div>
   <div class="header-right">
-    <div class="date-badge" id="dateBadge"></div>
-    <select class="days-select" id="daysSelect" onchange="fetchOrders()">
+    <div class="date-badge" id="dateBadge" onclick="toggleTodayFilter()" title="Click to filter today's orders only"></div>
+    <select class="days-select" id="daysSelect" onchange="onRangeChange()">
       <option value="1">Today</option>
-      <option value="3">Last 3 days</option>
-      <option value="7">Last 7 days</option>
-      <option value="30">Last 30 days</option>
-      <option value="90">Last 90 days</option>
+      <option value="2">Yesterday + Today</option>
+      <option value="14">Last 14 Days</option>
+      <option value="3">Last 3 Days</option>
+      <option value="7">Last 7 Days</option>
+      <option value="30">Last 30 Days</option>
+      <option value="90">Last 90 Days</option>
     </select>
     <button class="btn-primary" id="syncBtn" onclick="fetchOrders()">↻ Sync eBay</button>
   </div>
@@ -297,24 +354,37 @@
 
   <div class="alert-bar hidden fadein" id="alertBar"></div>
 
+  <!-- Stats — delivered/transit/label/pending are clickable filters -->
   <div class="stats-bar fadein">
     <div class="stat-cell"><div class="stat-label">Total Orders</div><div class="stat-value v-default" id="statTotal">—</div></div>
-    <div class="stat-cell"><div class="stat-label">Delivered</div><div class="stat-value v-delivered" id="statDelivered">—</div></div>
-    <div class="stat-cell"><div class="stat-label">In Transit</div><div class="stat-value v-transit" id="statTransit">—</div></div>
-    <div class="stat-cell"><div class="stat-label">Label Only</div><div class="stat-value v-label" id="statLabel">—</div></div>
-    <div class="stat-cell"><div class="stat-label">Pending Ship</div><div class="stat-value v-muted" id="statPending">—</div></div>
+    <div class="stat-cell clickable" id="statCellDelivered" onclick="toggleStatFilter('delivered', this)" title="Click to filter delivered orders">
+      <div class="stat-label">Delivered <span class="filter-hint">FILTER</span></div>
+      <div class="stat-value v-delivered" id="statDelivered">—</div>
+    </div>
+    <div class="stat-cell clickable" id="statCellTransit" onclick="toggleStatFilter('transit', this)" title="Click to filter in-transit orders">
+      <div class="stat-label">In Transit <span class="filter-hint">FILTER</span></div>
+      <div class="stat-value v-transit" id="statTransit">—</div>
+    </div>
+    <div class="stat-cell clickable" id="statCellLabel" onclick="toggleStatFilter('label', this)" title="Click to filter label-only orders">
+      <div class="stat-label">Label Only <span class="filter-hint">FILTER</span></div>
+      <div class="stat-value v-label" id="statLabel">—</div>
+    </div>
+    <div class="stat-cell clickable" id="statCellPending" onclick="toggleStatFilter('pending', this)" title="Click to filter pending orders">
+      <div class="stat-label">Pending Ship <span class="filter-hint">FILTER</span></div>
+      <div class="stat-value v-muted" id="statPending">—</div>
+    </div>
     <div class="stat-cell"><div class="stat-label">Total Spent</div><div class="stat-value v-accent" id="statSpent">—</div></div>
   </div>
 
   <div class="toolbar fadein">
     <input class="search-box" type="text" id="searchInput"
       placeholder="🔍  Search by order ID, item, tracking number, or seller..."
-      oninput="renderTable()">
-    <button class="filter-btn active" onclick="setFilter('all', this)">All Orders</button>
-    <button class="filter-btn" onclick="setFilter('delivered', this)">Delivered</button>
-    <button class="filter-btn" onclick="setFilter('transit', this)">In Transit</button>
-    <button class="filter-btn" onclick="setFilter('label', this)">Label Only</button>
-    <button class="filter-btn" onclick="setFilter('pending', this)">Pending</button>
+      oninput="onSearch()">
+    <button class="filter-btn active" id="fbAll" onclick="setFilter('all', this)">All Orders</button>
+    <button class="filter-btn" id="fbDelivered" onclick="setFilter('delivered', this)">Delivered</button>
+    <button class="filter-btn" id="fbTransit" onclick="setFilter('transit', this)">In Transit</button>
+    <button class="filter-btn" id="fbLabel" onclick="setFilter('label', this)">Label Only</button>
+    <button class="filter-btn" id="fbPending" onclick="setFilter('pending', this)">Pending</button>
     <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
   </div>
 
@@ -322,14 +392,14 @@
     <table>
       <thead>
         <tr>
-          <th onclick="sortBy('orderId')">Order #</th>
-          <th onclick="sortBy('item')">Item</th>
-          <th onclick="sortBy('seller')">Seller</th>
-          <th onclick="sortBy('carrier')">Carrier</th>
+          <th id="th-orderId" onclick="sortBy('orderId')">Order #</th>
+          <th id="th-item" onclick="sortBy('item')">Item</th>
+          <th id="th-seller" onclick="sortBy('seller')">Seller</th>
+          <th id="th-carrier" onclick="sortBy('carrier')">Carrier</th>
           <th>Tracking #</th>
-          <th onclick="sortBy('status')">Status</th>
-          <th onclick="sortBy('date')">Ordered</th>
-          <th onclick="sortBy('price')">Paid</th>
+          <th id="th-status" onclick="sortBy('status')">Status</th>
+          <th id="th-date" onclick="sortBy('date')">Ordered</th>
+          <th id="th-price" onclick="sortBy('price')">Paid</th>
         </tr>
       </thead>
       <tbody id="tableBody">
@@ -340,10 +410,26 @@
         </div></td></tr>
       </tbody>
     </table>
+    <div class="pagination" id="paginationBar" style="display:none">
+      <div class="pagination-info" id="pageInfo"></div>
+      <div class="pagination-controls">
+        <span style="font-size:12px;color:var(--muted);margin-right:4px;">Per page:</span>
+        <select class="page-size-select" id="pageSizeSelect" onchange="onPageSizeChange()">
+          <option value="100" selected>100</option>
+          <option value="50">50</option>
+          <option value="25">25</option>
+          <option value="250">250</option>
+          <option value="500">500</option>
+        </select>
+        <button class="page-btn" id="btnPrev" onclick="goPage(-1)">← Prev</button>
+        <div id="pageNumbers" style="display:flex;gap:4px;"></div>
+        <button class="page-btn" id="btnNext" onclick="goPage(1)">Next →</button>
+      </div>
+    </div>
   </div>
 
   <footer>
-    <p><span class="live-dot"></span>Last synced: <span id="lastSync">never</span></p>
+    <p><span class="live-dot"></span>Last synced: <span id="lastSync">never</span> · <span id="orderCountLabel"></span></p>
     <p>OrderRadar · eBay Trading API · GetOrders (Buyer role)</p>
   </footer>
 
@@ -352,16 +438,55 @@
 <script>
 let allOrders = [];
 let currentFilter = 'all';
+let filterTodayOnly = false;
 let sortKey = 'date';
 let sortDir = -1;
+let currentPage = 1;
+let pageSize = 100;
 
+const statusLabels = { delivered:'Delivered', transit:'In Transit', label:'Label Created', pending:'Pending' };
+const today = new Date();
+const todayStr = today.toDateString();
+const yesterdayStr = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).toDateString();
+
+// ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  const now = new Date();
-  document.getElementById('dateBadge').textContent =
-    now.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }).toUpperCase();
+  document.getElementById('dateBadge').setAttribute('data-date',
+    today.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }).toUpperCase()
+  );
+  updateDateBadge();
   checkHealth();
 });
 
+function updateDateBadge() {
+  const badge = document.getElementById('dateBadge');
+  const dateText = badge.getAttribute('data-date');
+  badge.textContent = dateText;
+  if (filterTodayOnly) {
+    badge.classList.add('active-today');
+    badge.title = 'Click to remove today filter';
+  } else {
+    badge.classList.remove('active-today');
+    badge.title = "Click to filter today's orders only";
+  }
+}
+
+// ── Today filter (via date badge click) ───────────────────────────────────────
+function toggleTodayFilter() {
+  filterTodayOnly = !filterTodayOnly;
+  updateDateBadge();
+  currentPage = 1;
+  renderTable();
+}
+
+// ── Range selector changed ────────────────────────────────────────────────────
+function onRangeChange() {
+  filterTodayOnly = false;
+  updateDateBadge();
+  fetchOrders();
+}
+
+// ── Health check ──────────────────────────────────────────────────────────────
 async function checkHealth() {
   try {
     const r = await fetch('/api/health');
@@ -377,6 +502,7 @@ async function checkHealth() {
   }
 }
 
+// ── Fetch orders ──────────────────────────────────────────────────────────────
 async function fetchOrders() {
   const btn = document.getElementById('syncBtn');
   btn.disabled = true;
@@ -395,14 +521,16 @@ async function fetchOrders() {
       carrier: o.tracking[0]?.carrier || '',
       status: o.deliveryStatus,
       date: o.createdDate,
+      dateObj: o.createdDate ? new Date(o.createdDate) : null,
       price: o.totalAmount,
       currency: o.currency,
     }));
     updateStats(data.stats);
+    currentPage = 1;
     renderTable();
     document.getElementById('lastSync').textContent = new Date().toLocaleTimeString();
     document.getElementById('setupPanel').classList.add('hidden');
-    showAlert('success', `✓ Loaded ${allOrders.length} orders successfully`);
+    showAlert('success', `✓ Loaded ${allOrders.length} orders`);
   } catch (err) {
     showAlert('error', `✗ Error: ${err.message}`);
   } finally {
@@ -411,6 +539,7 @@ async function fetchOrders() {
   }
 }
 
+// ── Stats ─────────────────────────────────────────────────────────────────────
 function updateStats(stats) {
   animateNum('statTotal', stats.total);
   animateNum('statDelivered', stats.delivered);
@@ -432,18 +561,70 @@ function animateNum(id, target) {
   }, 25);
 }
 
-const statusLabels = { delivered:'Delivered', transit:'In Transit', label:'Label Created', pending:'Pending' };
+// ── Clicking stat cards as filters ───────────────────────────────────────────
+function toggleStatFilter(statusKey, cell) {
+  const filterBtnMap = { delivered: 'fbDelivered', transit: 'fbTransit', label: 'fbLabel', pending: 'fbPending' };
+  const isActive = cell.classList.contains('active');
 
+  // Clear all stat card active states
+  ['Delivered','Transit','Label','Pending'].forEach(k => {
+    document.getElementById('statCell' + k)?.classList.remove('active');
+  });
+
+  if (isActive) {
+    // Toggle off — go back to All
+    setFilterById('all');
+  } else {
+    cell.classList.add('active');
+    setFilterById(statusKey);
+  }
+}
+
+function setFilterById(f) {
+  currentFilter = f;
+  currentPage = 1;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  const map = { all: 'fbAll', delivered: 'fbDelivered', transit: 'fbTransit', label: 'fbLabel', pending: 'fbPending' };
+  if (map[f]) document.getElementById(map[f]).classList.add('active');
+  renderTable();
+}
+
+// ── Toolbar filters ───────────────────────────────────────────────────────────
+function setFilter(f, btn) {
+  currentFilter = f;
+  currentPage = 1;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Clear stat card active states
+  ['Delivered','Transit','Label','Pending'].forEach(k => {
+    document.getElementById('statCell' + k)?.classList.remove('active');
+  });
+  renderTable();
+}
+
+function onSearch() {
+  currentPage = 1;
+  renderTable();
+}
+
+// ── Get filtered + sorted orders ─────────────────────────────────────────────
 function getFiltered() {
   const q = document.getElementById('searchInput').value.toLowerCase();
   return allOrders
-    .filter(o => currentFilter === 'all' || o.status === currentFilter)
-    .filter(o => !q ||
-      o.orderId.toLowerCase().includes(q) ||
-      o.item.toLowerCase().includes(q) ||
-      o.seller.toLowerCase().includes(q) ||
-      o.trackingNumber.toLowerCase().includes(q)
-    )
+    .filter(o => {
+      // Status filter
+      if (currentFilter !== 'all' && o.status !== currentFilter) return false;
+      // Today-only filter
+      if (filterTodayOnly && o.dateObj && o.dateObj.toDateString() !== todayStr) return false;
+      // Search
+      if (q && !(
+        o.orderId.toLowerCase().includes(q) ||
+        o.item.toLowerCase().includes(q) ||
+        o.seller.toLowerCase().includes(q) ||
+        o.trackingNumber.toLowerCase().includes(q)
+      )) return false;
+      return true;
+    })
     .sort((a, b) => {
       let av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
       if (sortKey === 'price') return (av - bv) * sortDir;
@@ -451,18 +632,30 @@ function getFiltered() {
     });
 }
 
+// ── Render table with pagination ─────────────────────────────────────────────
 function renderTable() {
-  const orders = getFiltered();
+  const filtered = getFiltered();
+  const totalFiltered = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  const start = (currentPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, totalFiltered);
+  const pageOrders = filtered.slice(start, end);
+
   const tbody = document.getElementById('tableBody');
-  if (!orders.length) {
+  if (!pageOrders.length) {
     tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
       <div class="icon">🔍</div>
       <div class="title">No orders found</div>
       <div class="sub">Try adjusting your search or filter</div>
     </div></td></tr>`;
+    document.getElementById('paginationBar').style.display = 'none';
+    document.getElementById('orderCountLabel').textContent = '';
     return;
   }
-  tbody.innerHTML = orders.map(o => {
+
+  tbody.innerHTML = pageOrders.map(o => {
     const trackingHtml = o.allTracking.length
       ? o.allTracking.map(t =>
           `<a class="tracking-link" href="#" onclick="openTracking('${t.carrier}','${t.trackingNumber}');return false;">${t.trackingNumber}</a>`
@@ -471,10 +664,13 @@ function renderTable() {
     const carrierHtml = o.allTracking.length
       ? [...new Set(o.allTracking.map(t => t.carrier))].map(c => `<span class="carrier-badge">${c}</span>`).join(' ')
       : `<span class="no-val">—</span>`;
-    const dateStr = o.date
-      ? new Date(o.date).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+    const dateStr = o.dateObj
+      ? o.dateObj.toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
       : '—';
-    return `<tr>
+    // Highlight today's orders
+    const isToday = o.dateObj && o.dateObj.toDateString() === todayStr;
+    const rowStyle = isToday ? ' style="background:#f0f8ff;"' : '';
+    return `<tr${rowStyle}>
       <td><span class="order-id">${o.orderId}</span></td>
       <td><div class="item-name" title="${o.item}">${o.item}</div></td>
       <td><span class="seller-name">${o.seller || '—'}</span></td>
@@ -485,21 +681,80 @@ function renderTable() {
       <td><span class="price">${o.currency === 'USD' ? '$' : o.currency + ' '}${o.price.toFixed(2)}</span></td>
     </tr>`;
   }).join('');
+
+  // Pagination bar
+  const paginationBar = document.getElementById('paginationBar');
+  paginationBar.style.display = totalFiltered > 0 ? 'flex' : 'none';
+
+  document.getElementById('pageInfo').innerHTML =
+    `Showing <strong>${start + 1}–${end}</strong> of <strong>${totalFiltered}</strong> orders`;
+
+  document.getElementById('orderCountLabel').textContent =
+    `${totalFiltered} order${totalFiltered !== 1 ? 's' : ''} shown`;
+
+  // Page number buttons (show up to 7)
+  const pageNumbers = document.getElementById('pageNumbers');
+  pageNumbers.innerHTML = '';
+  let pagesToShow = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pagesToShow.push(i);
+  } else {
+    pagesToShow = [1];
+    if (currentPage > 3) pagesToShow.push('...');
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pagesToShow.push(i);
+    if (currentPage < totalPages - 2) pagesToShow.push('...');
+    pagesToShow.push(totalPages);
+  }
+
+  pagesToShow.forEach(p => {
+    if (p === '...') {
+      const span = document.createElement('span');
+      span.textContent = '…';
+      span.style.cssText = 'padding:6px 4px;color:var(--muted);font-size:13px;';
+      pageNumbers.appendChild(span);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'page-btn' + (p === currentPage ? ' active' : '');
+      btn.textContent = p;
+      btn.onclick = () => { currentPage = p; renderTable(); };
+      pageNumbers.appendChild(btn);
+    }
+  });
+
+  document.getElementById('btnPrev').disabled = currentPage <= 1;
+  document.getElementById('btnNext').disabled = currentPage >= totalPages;
+
+  // Update sort indicators
+  ['orderId','item','seller','carrier','status','date','price'].forEach(k => {
+    const th = document.getElementById('th-' + k);
+    if (th) th.className = k === sortKey ? 'sorted' : '';
+  });
 }
 
-function setFilter(f, btn) {
-  currentFilter = f;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+// ── Pagination controls ───────────────────────────────────────────────────────
+function goPage(dir) {
+  const filtered = getFiltered();
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  currentPage = Math.max(1, Math.min(currentPage + dir, totalPages));
+  renderTable();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function onPageSizeChange() {
+  pageSize = parseInt(document.getElementById('pageSizeSelect').value, 10);
+  currentPage = 1;
   renderTable();
 }
 
+// ── Sort ─────────────────────────────────────────────────────────────────────
 function sortBy(key) {
   if (sortKey === key) sortDir *= -1;
   else { sortKey = key; sortDir = 1; }
+  currentPage = 1;
   renderTable();
 }
 
+// ── Tracking link ─────────────────────────────────────────────────────────────
 async function openTracking(carrier, trackingNumber) {
   try {
     const res = await fetch(`/api/tracking-url?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
@@ -508,6 +763,7 @@ async function openTracking(carrier, trackingNumber) {
   } catch { window.open('https://www.ebay.com/orders', '_blank'); }
 }
 
+// ── CSV Export ────────────────────────────────────────────────────────────────
 function exportCSV() {
   const orders = getFiltered();
   if (!orders.length) return;
@@ -519,7 +775,7 @@ function exportCSV() {
     o.allTracking.map(t => t.carrier).join(' | '),
     o.allTracking.map(t => t.trackingNumber).join(' | '),
     o.status,
-    o.date ? new Date(o.date).toLocaleString() : '',
+    o.dateObj ? o.dateObj.toLocaleString() : '',
     o.price.toFixed(2),
   ]);
   const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
@@ -529,6 +785,7 @@ function exportCSV() {
   a.click();
 }
 
+// ── Alert ─────────────────────────────────────────────────────────────────────
 function showAlert(type, msg) {
   const bar = document.getElementById('alertBar');
   bar.className = `alert-bar ${type}`;
