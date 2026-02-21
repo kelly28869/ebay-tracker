@@ -249,6 +249,11 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.post('/ebay/account-deletion', (req, res) => {
+  console.log('eBay account deletion notification:', req.body);
+  res.status(200).json({ acknowledged: true });
+});
+
 app.listen(PORT, () => {
   console.log(`\n🚀 eBay Order Tracker running at http://localhost:${PORT}`);
   console.log(`   API health: http://localhost:${PORT}/api/health`);
