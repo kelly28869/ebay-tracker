@@ -510,16 +510,16 @@ async function scrapeCarrierStatus(carrier, trackingNumber) {
     if (eventType === 'DELIVERED' || category === 'DELIVERED') {
       status = 'delivered';
       delivered = true;
-      // Pull actual delivery date from the most recent scan event
-      const events = data.trackSummary?.TrackDetail || data.trackDetail || [];
-      const firstEvent = Array.isArray(events) ? events[0] : null;
-      if (data.eventDate) {
+      // Extract date from statusSummary e.g. "...at 2:54 pm on February 9, 2026 in..."
+      const match = (data.statusSummary || '').match(/on\s+([A-Za-z]+ \d+,\s*\d{4})/i);
+      if (match) {
         try {
-          deliveryDate = new Date(data.eventDate)
-            .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          deliveryDate = new Date(match[1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         } catch {}
       }
-    } else if (eventType || data.expectedDeliveryDate) {
+    } else if (category === 'PRE-SHIPMENT' || category === 'PRE_SHIPMENT') {
+      status = 'pending';
+    } else if (eventType || data.expectedDeliveryDate || category) {
       status = 'transit';
       if (data.expectedDeliveryDate) {
         try {
@@ -669,7 +669,13 @@ app.get('/api/check-tracking', async (req, res) => {
 
 // ── Get all saved tracking statuses ──────────────────────────────────────────
 // Called on every sync so the frontend can auto-apply known statuses
-app.get('/api/tracking-statuses', (req, res) => {
+app.delete('/api/tracking-statuses', (req, res) => {
+  trackingStatusStore = {};
+  saveStatusStore(trackingStatusStore);
+  res.json({ ok: true, cleared: true });
+});
+
+
   res.json(trackingStatusStore);
 });
 

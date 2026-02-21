@@ -719,7 +719,7 @@ async function autoCheckAllTracking(savedStore) {
   if (toCheck.length === 0) return;
   console.log('Auto-checking', toCheck.length, 'tracking numbers in parallel...');
 
-  const BATCH = 10; // check 10 at a time
+  const BATCH = 30; // check 30 at a time
   for (let i = 0; i < toCheck.length; i += BATCH) {
     const batch = toCheck.slice(i, i + BATCH);
     await Promise.all(batch.map(async o => {
