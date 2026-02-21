@@ -138,41 +138,104 @@ async function getAllOrders(daysBack, fromDateStr, toDateStr) {
 }
 
 function getDeliveryStatus(order, transactions, allTracking) {
-  // 3-state logic:
-  //   delivered → eBay or carrier explicitly confirms delivery
-  //   transit   → tracking number exists
-  //   pending   → paid, no tracking yet
+  // Fast fallback from Trading API data only.
+  // Ground-truth status comes from scrapeOrderPageStatus() called per-order on demand.
+  // Rules mirror the eBay order page stepper logic:
+  //   delivered → any explicit delivery confirmation
+  //   transit   → tracking number exists (shipped, en route)
+  //   pending   → paid but no tracking yet
 
   const hasTrackingNumber = allTracking.some(t => t.trackingNumber && t.trackingNumber.length > 4);
 
-  // Signal 1: ActualDeliveryTime (set by eBay when carrier confirms)
+  // Explicit delivery signals from Trading API
   if (order.ActualDeliveryTime) return 'delivered';
-
-  // Signal 2: ShippingServiceSelected.ShippingStatus = Delivered (order level)
   const orderShipStatus = order.ShippingDetails
     && order.ShippingDetails.ShippingServiceSelected
     && order.ShippingDetails.ShippingServiceSelected.ShippingStatus;
   if (orderShipStatus === 'Delivered') return 'delivered';
-
-  // Signal 3: Transaction-level ShippingStatus
   for (const tx of transactions) {
     const s = tx.ShippingDetails && tx.ShippingDetails.ShippingStatus;
     if (s === 'Delivered') return 'delivered';
   }
 
-  // Signal 4: OrderStatus "Completed" AND ShippedTime is set means delivered
-  // (eBay only marks Completed once buyer confirms or return window closes after delivery)
-  if (order.OrderStatus === 'Completed' && order.ShippedTime) return 'delivered';
-
-  // Signal 5: CheckoutStatus complete + shipped = delivered
-  const checkoutStatus = order.CheckoutStatus && order.CheckoutStatus.Status;
-  if (checkoutStatus === 'Complete' && order.ShippedTime && hasTrackingNumber) return 'delivered';
-
-  // Transit: has a tracking number
   if (hasTrackingNumber) return 'transit';
-
-  // Pending: paid but nothing shipped yet
   return 'pending';
+}
+
+// ── Scrape eBay order page to read stepper icon stages ───────────────────────
+// The eBay order detail page shows a progress stepper with SVG icons:
+//   icon-stepper-confirmation-24  = stage completed ✓
+//   icon-stepper-upcoming-24      = stage not yet reached
+// Stages in order on the page: Paid → Shipped/Tracking → Delivered
+// We fetch the page HTML using the user's auth token as a cookie so eBay
+// returns the real personalised order page, then count confirmation icons
+// up to each stage to determine the furthest confirmed stage.
+async function scrapeOrderPageStatus(orderId) {
+  if (!EBAY_USER_TOKEN) return null;
+
+  // eBay order page URL
+  const url = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(orderId)}`;
+
+  try {
+    const resp = await axios.get(url, {
+      headers: {
+        // Pass the Trading API token as the eBay auth cookie so the page renders
+        'Cookie': `ebay=%5Esbf%3D%23000000%5E; nonsession=BAQAAAXarUsE5AAQAAAAAAAAAAAAAAAAAAAAABI=; s=%7B%22enc%22%3A%22AQAHAAAAEAAAAXarUsE5%22%7D`,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.ebay.com/mye/myebay/purchase',
+      },
+      timeout: 10000,
+      maxRedirects: 3,
+    });
+
+    const html = resp.data;
+
+    // Count stepper icons in document order.
+    // Each stage has exactly one icon — confirmation or upcoming.
+    // We find all icon refs and map them to stages in sequence.
+    const iconPattern = /xlink:href="#icon-stepper-(confirmation|upcoming)-24"/g;
+    const stages = [];
+    let m;
+    while ((m = iconPattern.exec(html)) !== null) {
+      stages.push(m[1]); // 'confirmation' or 'upcoming'
+    }
+
+    // stages[0] = Paid, stages[1] = Tracking/Shipped, stages[2] = Delivered
+    // Find the furthest stage that has 'confirmation'
+    if (stages.length === 0) {
+      console.log('DEBUG scrape: no stepper icons found for order', orderId);
+      console.log('DEBUG html snippet:', html.substring(0, 500));
+      return null;
+    }
+
+    console.log('Order', orderId, 'stepper stages:', stages);
+
+    // Delivered = stage index 2 (or last) is confirmation
+    if (stages[2] === 'confirmation' || (stages.length >= 3 && stages[stages.length - 1] === 'confirmation')) {
+      return 'delivered';
+    }
+    // In transit = stage 1 (tracking) is confirmation but stage 2 (delivered) is upcoming
+    if (stages[1] === 'confirmation' && stages[2] === 'upcoming') {
+      return 'transit';
+    }
+    // Pending = only stage 0 (paid) is confirmation
+    if (stages[0] === 'confirmation' && (stages[1] === 'upcoming' || stages.length < 2)) {
+      return 'pending';
+    }
+
+    // Fallback: return furthest confirmed stage
+    let furthest = null;
+    if (stages[0] === 'confirmation') furthest = 'pending';
+    if (stages[1] === 'confirmation') furthest = 'transit';
+    if (stages[2] === 'confirmation') furthest = 'delivered';
+    return furthest;
+
+  } catch (err) {
+    console.error('scrapeOrderPageStatus error for', orderId, ':', err.message);
+    return null;
+  }
 }
 
 function parseOrder(order) {
@@ -357,7 +420,24 @@ app.get('/api/orders', async (req, res) => {
   }
 });
 
-// ── NEW: Check real delivery status by scraping carrier page ─────────────────
+// ── Scrape eBay order page stepper for ground-truth status ───────────────────
+// Called when user clicks the order number in the dashboard.
+// Returns { status } based on the stepper SVG icons on the eBay order page.
+app.get('/api/order-status', async (req, res) => {
+  const { orderId } = req.query;
+  if (!orderId) return res.status(400).json({ error: 'orderId required' });
+  try {
+    const status = await scrapeOrderPageStatus(orderId);
+    if (status === null) {
+      return res.json({ status: 'unknown', message: 'Could not read eBay order page — may need browser session' });
+    }
+    res.json({ status, orderId });
+  } catch (err) {
+    res.status(500).json({ error: err.message, status: 'error' });
+  }
+});
+
+// ── Check real delivery status by scraping carrier page ───────────────────────
 // Called when user clicks a tracking number in the dashboard.
 // Returns { status, delivered, url } so frontend can update the row.
 app.get('/api/check-tracking', async (req, res) => {
