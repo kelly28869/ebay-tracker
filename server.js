@@ -5,11 +5,31 @@ const cors = require('cors');
 const xml2js = require('xml2js');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ── Persistent tracking status store ─────────────────────────────────────────
+// Saved to /tmp/tracking-status.json on Render (resets on redeploy, but persists
+// across requests in the same deployment). Key = trackingNumber, value = { status, deliveryDate, savedAt }
+const STATUS_FILE = path.join('/tmp', 'tracking-status.json');
+
+function loadStatusStore() {
+  try {
+    if (fs.existsSync(STATUS_FILE)) return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf8'));
+  } catch(e) { console.error('loadStatusStore error:', e.message); }
+  return {};
+}
+
+function saveStatusStore(store) {
+  try { fs.writeFileSync(STATUS_FILE, JSON.stringify(store, null, 2)); } 
+  catch(e) { console.error('saveStatusStore error:', e.message); }
+}
+
+let trackingStatusStore = loadStatusStore();
+console.log('Loaded', Object.keys(trackingStatusStore).length, 'saved tracking statuses');
 const EBAY_API_URL = 'https://api.ebay.com/ws/api.dll';
 const {
   EBAY_APP_ID,
@@ -100,6 +120,13 @@ async function getAllOrders(daysBack, fromDateStr, toDateStr) {
     from.setDate(from.getDate() - (daysBack || 1));
     createTimeFrom = from.toISOString();
     createTimeTo = now.toISOString();
+  }
+
+  // eBay only allows fetching orders from the last 90 days
+  const ninetyDaysAgo = new Date();
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  if (new Date(createTimeFrom) < ninetyDaysAgo) {
+    throw new Error('eBay only allows fetching orders from the last 90 days. Please select a date range within the past 90 days.');
   }
 
   const page1Result = await fetchPage(createTimeFrom, createTimeTo, 1);
@@ -603,10 +630,36 @@ app.get('/api/check-tracking', async (req, res) => {
   if (!carrier || !trackingNumber) return res.status(400).json({ error: 'carrier and trackingNumber required' });
   try {
     const result = await scrapeCarrierStatus(carrier, trackingNumber);
+    // Auto-save confirmed statuses to persistent store
+    if (result.status === 'delivered' || result.status === 'transit') {
+      trackingStatusStore[trackingNumber] = {
+        status: result.status,
+        deliveryDate: result.deliveryDate || null,
+        carrier,
+        savedAt: new Date().toISOString(),
+      };
+      saveStatusStore(trackingStatusStore);
+      console.log('Saved status for', trackingNumber, ':', result.status);
+    }
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message, status: 'error' });
   }
+});
+
+// ── Get all saved tracking statuses ──────────────────────────────────────────
+// Called on every sync so the frontend can auto-apply known statuses
+app.get('/api/tracking-statuses', (req, res) => {
+  res.json(trackingStatusStore);
+});
+
+// ── Manually save a tracking status (called from frontend after manual confirm) 
+app.post('/api/tracking-statuses', (req, res) => {
+  const { trackingNumber, status, deliveryDate, carrier } = req.body;
+  if (!trackingNumber || !status) return res.status(400).json({ error: 'trackingNumber and status required' });
+  trackingStatusStore[trackingNumber] = { status, deliveryDate: deliveryDate || null, carrier: carrier || '', savedAt: new Date().toISOString() };
+  saveStatusStore(trackingStatusStore);
+  res.json({ ok: true });
 });
 
 app.get('/api/tracking-url', (req, res) => {

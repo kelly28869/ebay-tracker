@@ -419,13 +419,15 @@ function renderCal() {
     }
     for (let d = 1; d <= daysInMonth; d++) {
       const thisDate = new Date(calViewYear, calViewMonth, d);
+      const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 90);
       const isFuture = thisDate > today;
+      const isTooOld = thisDate < ninetyDaysAgo;
       const isToday  = thisDate.toDateString() === todayStr;
       const el = document.createElement('div');
-      el.className = 'cal-day' + (isFuture?' future':'') + (isToday?' today':'');
+      el.className = 'cal-day' + (isFuture?' future':'') + (isTooOld?' future':'') + (isToday?' today':'');
       el.textContent = d;
-      el.dataset.ts = +thisDate; // store timestamp for in-place class updates
-      if (!isFuture) {
+      el.dataset.ts = +thisDate;
+      if (!isFuture && !isTooOld) {
         el.onclick = () => calDayClick(new Date(calViewYear, calViewMonth, d));
       }
       grid.appendChild(el);
@@ -513,8 +515,15 @@ function updateCalHint() {
 
 function applyCalFilter() {
   if (!calRangeStart) return;
-  const lo = calRangeEnd ? new Date(Math.min(calRangeStart,calRangeEnd)) : calRangeStart;
-  const hi = calRangeEnd ? new Date(Math.max(calRangeStart,calRangeEnd)) : calRangeStart;
+  const lo = calRangeEnd ? new Date(Math.min(+calRangeStart,+calRangeEnd)) : calRangeStart;
+  const hi = calRangeEnd ? new Date(Math.max(+calRangeStart,+calRangeEnd)) : calRangeStart;
+
+  // eBay API limit: no orders older than 90 days
+  const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 90);
+  if (lo < ninetyDaysAgo) {
+    showAlert('error', '⚠ eBay only allows fetching orders from the last 90 days. Please select a more recent date range.');
+    return;
+  }
   calFilterDate = { from: lo, to: hi };
   document.getElementById('calBtn').classList.add('active');
   const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
@@ -613,6 +622,7 @@ async function fetchOrders() {
     document.getElementById('lastSync').textContent = new Date().toLocaleTimeString();
     document.getElementById('setupPanel').classList.add('hidden');
     showAlert('success', `✓ Loaded ${allOrders.length} orders`);
+    applyStoredStatuses();
   } catch(err) { showAlert('error', `✗ Error: ${err.message}`); }
   finally { btn.disabled=false; btn.textContent='↻ Sync eBay'; }
 }
@@ -658,8 +668,45 @@ async function fetchOrdersForDate(fromDate, toDate) {
     const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const label = from.toDateString()===to.toDateString() ? fmt(from) : fmt(from)+' – '+fmt(to);
     showAlert('success', `✓ Loaded ${allOrders.length} orders for ${label}`);
+    applyStoredStatuses();
   } catch(err) { showAlert('error', `✗ Error: ${err.message}`); }
   finally { btn.disabled=false; btn.textContent='↻ Sync eBay'; }
+}
+
+// ── Auto-apply saved tracking statuses after every sync ───────────────────────
+async function applyStoredStatuses() {
+  try {
+    const res = await fetch('/api/tracking-statuses');
+    const store = await res.json();
+    let applied = 0;
+    allOrders.forEach((o, idx) => {
+      if (!o.trackingNumber) return;
+      const saved = store[o.trackingNumber];
+      if (!saved) return;
+      // Apply saved status to order object
+      o.confirmedStatus = saved.status;
+      o.deliveryDate = saved.deliveryDate || null;
+      // Update status cell if rendered
+      const sc = document.getElementById('statusCell_' + idx);
+      if (sc) {
+        const label = saved.status === 'delivered' ? 'Delivered' : saved.status === 'transit' ? 'In Transit' : saved.status;
+        const cls   = saved.status === 'delivered' ? 'delivered' : saved.status === 'transit' ? 'transit' : 'pending';
+        sc.innerHTML = `<span class="status ${cls}">${label}</span> <span class="verified-tag">✓ saved</span>`;
+      }
+      // Update delivery date cell
+      const dc = document.getElementById('deliveryDateCell_' + idx);
+      if (dc) {
+        dc.innerHTML = saved.deliveryDate
+          ? `<span class="delivery-date-val">${saved.deliveryDate}</span>`
+          : '<span class="no-val">—</span>';
+      }
+      applied++;
+    });
+    if (applied > 0) {
+      recomputeStats();
+      console.log('Auto-applied', applied, 'saved tracking statuses');
+    }
+  } catch(e) { console.error('applyStoredStatuses error:', e.message); }
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -926,28 +973,34 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
 
     if (data.status === 'delivered') {
       allOrders[orderIdx].confirmedStatus = 'delivered';
-      allOrders[orderIdx].deliveryDate = null; // blank when delivered
+      allOrders[orderIdx].deliveryDate = null;
       link.classList.remove('checking'); link.classList.add('is-delivered');
       link.innerHTML = `${trackingNumber} <span class="track-badge delivered">✓ Delivered</span>`;
       const sc = document.getElementById('statusCell_'+orderIdx);
-      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ USPS</span>`;
+      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ saved</span>`;
       const dc = document.getElementById('deliveryDateCell_'+orderIdx);
       if (dc) dc.innerHTML = '<span class="no-val">—</span>';
       recomputeStats();
-      showAlert('success', `✓ USPS confirms delivered: ${trackingNumber}`);
+      showAlert('success', `✓ Delivered confirmed & saved: ${trackingNumber}`);
+      // Save to server so it persists across refreshes
+      fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ trackingNumber, status: 'delivered', deliveryDate: null, carrier }) });
     } else if (data.status === 'transit') {
       allOrders[orderIdx].confirmedStatus = 'transit';
       allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
       link.classList.remove('checking'); link.classList.add('is-transit');
       link.innerHTML = `${trackingNumber} <span class="track-badge transit">In Transit</span>`;
       const sc = document.getElementById('statusCell_'+orderIdx);
-      if (sc) sc.innerHTML = `<span class="status transit">In Transit</span> <span class="verified-tag">✓ USPS</span>`;
+      if (sc) sc.innerHTML = `<span class="status transit">In Transit</span> <span class="verified-tag">✓ saved</span>`;
       const dc = document.getElementById('deliveryDateCell_'+orderIdx);
       if (dc) dc.innerHTML = data.deliveryDate
         ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
         : '<span class="no-val">—</span>';
       recomputeStats();
       if (data.url) window.open(data.url, '_blank');
+      // Save to server
+      fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ trackingNumber, status: 'transit', deliveryDate: data.deliveryDate || null, carrier }) });
     } else {
       // unknown/error — just open carrier site, don't change status
       link.classList.remove('checking');
@@ -957,7 +1010,6 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
   } catch(err) {
     link.classList.remove('checking');
     link.textContent = trackingNumber;
-    // Fallback: open carrier website directly
     try {
       const r = await fetch(`/api/tracking-url?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
       const d = await r.json();
