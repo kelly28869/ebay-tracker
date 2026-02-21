@@ -278,24 +278,21 @@ async function autoCheckTracking(orders, store) {
     }
   }
   if (toCheck.length === 0) return;
-  console.log('Sellers: auto-checking', toCheck.length, 'tracking numbers…');
+  console.log('Sellers: auto-checking', toCheck.length, 'tracking numbers simultaneously…');
 
-  const BATCH = 30;
-  for (let i = 0; i < toCheck.length; i += BATCH) {
-    const batch = toCheck.slice(i, i + BATCH);
-    await Promise.all(batch.map(async ({ tn, carrier }) => {
-      try {
-        const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(tn)}`);
-        const data = await res.json();
-        if (data.status && data.status !== 'unknown' && data.status !== 'error') {
-          savedStatuses[tn] = { status: data.status, deliveryDate: data.deliveryDate || null };
-        }
-      } catch(e) {}
-    }));
-    // Re-render with updated statuses after each batch
-    const filtered = filterOrdersByDays(masterOrders, currentDays);
-    processOrders(filtered, savedStatuses);
-  }
+  // Fire all at once — each resolves independently and re-renders immediately
+  await Promise.all(toCheck.map(async ({ tn, carrier }) => {
+    try {
+      const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(tn)}`);
+      const data = await res.json();
+      if (data.status && data.status !== 'unknown' && data.status !== 'error') {
+        savedStatuses[tn] = { status: data.status, deliveryDate: data.deliveryDate || null };
+        // Re-render immediately as each result comes in
+        const filtered = filterOrdersByDays(masterOrders, currentDays);
+        processOrders(filtered, savedStatuses);
+      }
+    } catch(e) {}
+  }));
   console.log('Sellers: auto-check complete.');
 }
 
@@ -392,6 +389,10 @@ function renderSellers() {
     return;
   }
 
+  // Remember which cards are expanded before re-render
+  const expanded = new Set();
+  document.querySelectorAll('.seller-card.expanded').forEach(el => expanded.add(el.dataset.seller));
+
   const html = filtered.map((s, i) => {
     const rank = i + 1;
     const barPct = Math.round((s.totalSpent / maxSpent) * 100);
@@ -399,6 +400,7 @@ function renderSellers() {
     const initial = s.name[0].toUpperCase();
     const firstDate = s.firstDate ? new Date(s.firstDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—';
     const lastDate  = s.lastDate  ? new Date(s.lastDate).toLocaleDateString('en-US',  {month:'short', day:'numeric', year:'numeric'}) : '—';
+    const isExpanded = expanded.has(s.name);
 
     const ordersHtml = s.orders
       .sort((a,b) => new Date(b.date) - new Date(a.date))
@@ -406,24 +408,17 @@ function renderSellers() {
         const d = o.date ? new Date(o.date) : null;
         const dateStr = d ? d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—';
         const timeStr = d ? d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) : '';
-        const statusCls = o.status === 'delivered' ? 'delivered' : o.status === 'transit' ? 'transit' : 'pending';
-        const statusLabel = o.status === 'delivered' ? 'Delivered' : o.status === 'transit' ? 'In Transit' : 'Pending';
         const ebayUrl = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(o.orderId)}`;
-        const deliveryCell = o.deliveryDate
-          ? `<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--green)">${o.deliveryDate}</span>`
-          : '<span style="color:var(--muted)">—</span>';
         return `<tr>
           <td class="date-cell">${dateStr}<br><span style="color:var(--muted);font-size:10px;">${timeStr}</span></td>
           <td class="item-title"><a href="${ebayUrl}" target="_blank" style="color:var(--accent2);text-decoration:none;" title="${o.item}">${o.item}</a></td>
           <td style="text-align:center;font-family:'DM Mono',monospace;font-size:12px;">${o.quantity > 1 ? `<span style="background:#f0f4ff;color:var(--accent2);padding:1px 7px;border-radius:10px;font-size:11px;">x${o.quantity}</span>` : o.quantity}</td>
-          <td><span class="status-badge ${statusCls}">${statusLabel}</span></td>
-          <td>${deliveryCell}</td>
           <td class="price-cell" style="text-align:right;">$${o.price.toFixed(2)}</td>
         </tr>`;
       }).join('');
 
     return `
-    <div class="seller-card" id="card_${i}">
+    <div class="seller-card${isExpanded ? ' expanded' : ''}" id="card_${i}" data-seller="${s.name.replace(/"/g,'&quot;')}">
       <div class="seller-header" onclick="toggleCard(${i})">
         <div class="seller-rank ${rank <= 3 ? 'top' : ''}">#${rank}</div>
         <div class="seller-avatar" style="background:${avatarColor}">${initial}</div>
@@ -458,7 +453,7 @@ function renderSellers() {
       </div>
       <div class="seller-orders">
         <table class="orders-table">
-          <thead><tr><th>Date / Time</th><th>Item</th><th style="text-align:center">Qty</th><th>Status</th><th>Delivered</th><th style="text-align:right">Price</th></tr></thead>
+          <thead><tr><th>Date / Time</th><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th></tr></thead>
           <tbody>${ordersHtml}</tbody>
         </table>
       </div>
