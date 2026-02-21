@@ -161,7 +161,7 @@
   .delivered-date{font-size:10px;color:var(--delivered);margin-top:3px;font-family:'DM Mono',monospace;opacity:0.8;}
   .qty-badge{font-size:12px;font-weight:600;color:var(--text2);font-family:'DM Mono',monospace;}
   .delivery-date-val{font-size:12px;color:var(--transit);font-family:'DM Mono',monospace;font-weight:500;}
-  .note-cell{min-width:140px;max-width:200px;}
+  .note-cell{min-width:200px;max-width:280px;}
   .note-wrap{position:relative;}
   .note-input{width:100%;border:none;background:transparent;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--text2);padding:4px 6px;border-radius:4px;outline:none;resize:none;line-height:1.4;transition:background 0.15s,box-shadow 0.15s;}
   .note-input:hover{background:var(--surface2);}
@@ -285,9 +285,9 @@
           <th id="th-qty" onclick="sortBy('quantity')" style="text-align:center;">Qty</th>
           <th id="th-carrier" onclick="sortBy('carrier')">Carrier</th>
           <th>Tracking # <small style="font-weight:400;color:var(--muted);font-size:9px;">(click to verify status)</small></th>
+          <th>Notes</th>
           <th id="th-status" onclick="sortBy('status')">Status</th>
           <th id="th-deliveryDate">Delivery Date</th>
-          <th>Notes</th>
           <th id="th-date" onclick="sortBy('date')">Ordered</th>
           <th id="th-price" onclick="sortBy('price')">Paid</th>
         </tr>
@@ -963,6 +963,15 @@ function renderTable() {
       <td style="text-align:center;"><span class="qty-badge">${o.quantity > 1 ? 'x'+o.quantity : o.quantity}</span></td>
       <td>${carrierHtml}</td>
       <td>${trackingHtml}</td>
+      <td class="note-cell">
+        <div class="note-wrap">
+          <textarea class="note-input" rows="2" placeholder="Add note…"
+            data-orderid="${(o.extendedOrderId||o.orderId)}"
+            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';this.nextElementSibling.classList.remove('saved');this.nextElementSibling.textContent='Save';"
+          >${o.note ? o.note.replace(/</g,'&lt;') : ''}</textarea>
+          <button class="note-save-btn" onclick="saveNoteBtn(this)">Save</button>
+        </div>
+      </td>
       <td id="statusCell_${globalIdx}">
         <span class="status ${eff}">${statusLabels[eff]||eff}</span>
         ${o.confirmedStatus ? '<span class="verified-tag">✓ eBay</span>' : ''}
@@ -971,15 +980,6 @@ function renderTable() {
         ${eff !== 'delivered' && o.deliveryDate
           ? `<span class="delivery-date-val">${o.deliveryDate}</span>`
           : '<span class="no-val">—</span>'}
-      </td>
-      <td class="note-cell">
-        <div class="note-wrap">
-          <textarea class="note-input" rows="1" placeholder="Add note…"
-            data-orderid="${(o.extendedOrderId||o.orderId)}"
-            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';this.nextElementSibling.classList.remove('saved');this.nextElementSibling.textContent='Save';"
-          >${o.note ? o.note.replace(/</g,'&lt;') : ''}</textarea>
-          <button class="note-save-btn" onclick="saveNoteBtn(this)">Save</button>
-        </div>
       </td>
       <td><span class="no-val">${dateStr}</span></td>
       <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
