@@ -820,7 +820,29 @@ async function saveNote(textarea) {
   const orderId = textarea.dataset.orderid;
   const note = textarea.value.trim();
   const o = allOrders.find(o => (o.extendedOrderId || o.orderId) === orderId);
-  if (o) o.note = note;
+  if (o) {
+    o.note = note;
+
+    // If note is "d" or "D" and carrier is UPS or FedEx, mark as delivered
+    const carrier = (o.carrier || '').toUpperCase();
+    const isUpsFedex = carrier.includes('UPS') || carrier.includes('FEDEX')
+      || (o.trackingNumber || '').toUpperCase().startsWith('1Z'); // UPS auto-detect
+    if (note.toLowerCase() === 'd' && isUpsFedex) {
+      const idx = allOrders.indexOf(o);
+      o.confirmedStatus = 'delivered';
+      // Update status cell
+      const sc = document.getElementById('statusCell_' + idx);
+      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ manual</span>`;
+      recomputeStats();
+      // Save to tracking store too
+      fetch('/api/tracking-statuses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackingNumber: o.trackingNumber, status: 'delivered', deliveryDate: null, carrier: o.carrier })
+      });
+    }
+  }
+
   try {
     await fetch('/api/notes', {
       method: 'POST',
@@ -828,6 +850,7 @@ async function saveNote(textarea) {
       body: JSON.stringify({ orderId, note })
     });
   } catch(e) { console.error('saveNote error:', e.message); }
+}
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
