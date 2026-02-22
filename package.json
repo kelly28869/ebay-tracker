@@ -9,8 +9,12 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\""
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.0"
+    "axios": "^1.13.5",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^4.22.1",
+    "pg": "^8.18.0",
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"
