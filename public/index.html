@@ -283,13 +283,13 @@
           <th id="th-item" onclick="sortBy('item')">Item</th>
           <th id="th-seller" onclick="sortBy('seller')">Seller</th>
           <th id="th-qty" onclick="sortBy('quantity')" style="text-align:center;">Qty</th>
+          <th id="th-price" onclick="sortBy('price')">Paid</th>
           <th id="th-carrier" onclick="sortBy('carrier')">Carrier</th>
           <th>Tracking #</th>
           <th>Notes</th>
           <th id="th-status" onclick="sortBy('status')">Status</th>
           <th id="th-deliveryDate">Delivery Date</th>
           <th id="th-date" onclick="sortBy('date')">Ordered</th>
-          <th id="th-price" onclick="sortBy('price')">Paid</th>
         </tr>
       </thead>
       <tbody id="tableBody">
@@ -961,6 +961,7 @@ function renderTable() {
       <td><div class="item-name" title="${o.item}">${o.item}</div>${itemIdsHtml}</td>
       <td>${sellerHtml}</td>
       <td style="text-align:center;"><span class="qty-badge">${o.quantity > 1 ? 'x'+o.quantity : o.quantity}</span></td>
+      <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
       <td>${carrierHtml}</td>
       <td>${trackingHtml}</td>
       <td class="note-cell">
@@ -982,7 +983,6 @@ function renderTable() {
           : '<span class="no-val">—</span>'}
       </td>
       <td><span class="no-val">${dateStr}</span></td>
-      <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
     </tr>`;
   }).join('');
 
@@ -1084,10 +1084,22 @@ async function checkOrderStatus(event, orderIdx, rawOrderId) {
   }
 }
 
+function carrierUrl(carrier, trackingNumber) {
+  const c = (carrier || '').toUpperCase();
+  const tn = trackingNumber || '';
+  if (c.includes('UPS') || tn.toUpperCase().startsWith('1Z'))
+    return `https://www.ups.com/track?tracknum=${tn}`;
+  if (c.includes('FEDEX') || /^\d{12}$|^\d{15}$/.test(tn))
+    return `https://www.fedex.com/apps/fedextrack/?tracknumbers=${tn}`;
+  if (c.includes('DHL'))
+    return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${tn}`;
+  return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tn}`;
+}
+
 async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
   event.preventDefault();
-  // Open USPS immediately — don't wait for API
-  window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
+  // Open correct carrier page immediately
+  window.open(carrierUrl(carrier, trackingNumber), '_blank');
 
   const link = document.getElementById(linkId);
   if (!link || link.classList.contains('checking')) return;
@@ -1112,7 +1124,6 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
       showAlert('success', `✓ Delivered confirmed & saved: ${trackingNumber}`);
       fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ trackingNumber, status: 'delivered', deliveryDate: data.deliveryDate || null, carrier }) });
-      window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
     } else if (data.status === 'transit') {
       allOrders[orderIdx].confirmedStatus = 'transit';
       allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
@@ -1125,22 +1136,15 @@ async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
         ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
         : '<span class="no-val">—</span>';
       recomputeStats();
-      window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
       fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ trackingNumber, status: 'transit', deliveryDate: data.deliveryDate || null, carrier }) });
     } else {
       link.classList.remove('checking');
       link.textContent = trackingNumber;
-      window.open(`https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`, '_blank');
     }
   } catch(err) {
     link.classList.remove('checking');
     link.textContent = trackingNumber;
-    try {
-      const r = await fetch(`/api/tracking-url?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
-      const d = await r.json();
-      if(d.url) window.open(d.url,'_blank');
-    } catch{}
   }
 }
 
