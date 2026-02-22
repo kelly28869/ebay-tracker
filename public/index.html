@@ -826,20 +826,28 @@ async function saveNote(textarea) {
     // If note is "d" or "D" and carrier is UPS or FedEx, mark as delivered
     const carrier = (o.carrier || '').toUpperCase();
     const isUpsFedex = carrier.includes('UPS') || carrier.includes('FEDEX')
-      || (o.trackingNumber || '').toUpperCase().startsWith('1Z'); // UPS auto-detect
-    if (note.toLowerCase() === 'd' && isUpsFedex) {
+      || (o.trackingNumber || '').toUpperCase().startsWith('1Z');
+    if (isUpsFedex) {
       const idx = allOrders.indexOf(o);
-      o.confirmedStatus = 'delivered';
-      // Update status cell
       const sc = document.getElementById('statusCell_' + idx);
-      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ manual</span>`;
+      if (note.toLowerCase() === 'd') {
+        // Mark as delivered
+        o.confirmedStatus = 'delivered';
+        if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ manual</span>`;
+        fetch('/api/tracking-statuses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackingNumber: o.trackingNumber, status: 'delivered', deliveryDate: null, carrier: o.carrier })
+        });
+      } else if (o.confirmedStatus === 'delivered') {
+        // Note was changed/cleared — revert to transit if it had tracking
+        o.confirmedStatus = o.trackingNumber ? 'transit' : null;
+        const newStatus = o.confirmedStatus || o.status;
+        const label = newStatus === 'transit' ? 'In Transit' : newStatus;
+        const cls = newStatus === 'transit' ? 'transit' : 'pending';
+        if (sc) sc.innerHTML = `<span class="status ${cls}">${label}</span>`;
+      }
       recomputeStats();
-      // Save to tracking store too
-      fetch('/api/tracking-statuses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trackingNumber: o.trackingNumber, status: 'delivered', deliveryDate: null, carrier: o.carrier })
-      });
     }
   }
 
