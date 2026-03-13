@@ -170,7 +170,7 @@
 <script>
 let sellersData = [];
 let maxSpent = 0;
-let currentDays = 30;
+let currentDays = 14;
 let currentLabel = 'Last 30 days';
 let ordersCache = {}; // key = days, value = { orders, savedStatuses, fetchedAt }
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -239,7 +239,7 @@ async function loadSellers(forceRefresh = false) {
     // Always fetch full 89 days — server caches this, so second load is instant
     // Switching timeframes (7d/30d/60d) filters client-side with no extra API calls
     const [res, sr] = await Promise.all([
-      fetch(`/api/orders?daysBack=89`),
+      fetch(`/api/orders?daysBack=${currentDays || 30}`),
       fetch('/api/tracking-statuses').catch(() => ({ json: () => ({}) }))
     ]);
     const data = await res.json();
