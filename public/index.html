@@ -1155,9 +1155,10 @@ function sortBy(key){if(sortKey===key)sortDir*=-1;else{sortKey=key;sortDir=1;}cu
 function exportCSV() {
   const orders = getFiltered();
   if(!orders.length) return;
-  const headers=['Order ID','Item','Seller','Carrier','Tracking Number','Status','Confirmed Status','Date Ordered','Amount'];
+  const headers=['Order ID','Item','Seller','Qty','Carrier','Tracking Number','Status','Confirmed Status','Date Ordered','Amount'];
   const rows=orders.map(o=>[
     o.orderId,`"${o.item.replace(/"/g,'""')}"`,o.seller,
+    o.quantity,
     o.allTracking.map(t=>t.carrier).join(' | '),
     o.allTracking.map(t=>t.trackingNumber).join(' | '),
     o.status, o.confirmedStatus||'',
