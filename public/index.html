@@ -1,14 +1,1180 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>eBaySnipe</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  </head>
-  <body style="margin:0">
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OrderRadar — eBay Buyer Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#f0f0f0; --surface:#fff; --surface2:#f8f8f8; --border:#e0e0e0; --border2:#ccc;
+    --accent:#c84b2f; --accent2:#1a56a0; --text:#111; --text2:#444; --muted:#888;
+    --delivered:#1a7a4a; --transit:#b45d0a; --label-c:#7c3aab;
+    --shadow:0 1px 4px rgba(0,0,0,0.07),0 4px 16px rgba(0,0,0,0.04);
+    --shadow-lg:0 2px 8px rgba(0,0,0,0.1),0 8px 24px rgba(0,0,0,0.07);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;font-size:14px;line-height:1.5;}
+  .container{max-width:1500px;margin:0 auto;padding:0 32px;}
+
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:20px 32px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;position:sticky;top:0;z-index:200;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+  .logo h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;letter-spacing:-0.5px;}
+  .logo h1 em{font-style:italic;color:var(--accent);}
+  .logo p{font-size:11px;color:var(--muted);margin-top:1px;}
+  .header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
+  /* ── CALENDAR BUTTON ── */
+  .cal-wrap{position:relative;}
+  .cal-btn{font-family:'DM Mono',monospace;font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border2);padding:8px 14px;border-radius:4px;cursor:pointer;user-select:none;transition:all 0.15s;white-space:nowrap;display:flex;align-items:center;gap:6px;}
+  .cal-btn:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  .cal-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+
+  /* ── CALENDAR POPUP ── */
+  .cal-popup{display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:var(--shadow-lg);padding:16px;z-index:999;min-width:292px;}
+  .cal-popup.open{display:block;}
+  .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:4px;}
+  .cal-nav{background:none;border:1px solid var(--border2);border-radius:4px;padding:5px 10px;cursor:pointer;font-size:14px;color:var(--text2);transition:all 0.1s;line-height:1;flex-shrink:0;}
+  .cal-nav:hover{border-color:var(--accent2);color:var(--accent2);}
+  /* Clickable month/year label — toggles picker view */
+  .cal-month-label{font-weight:600;font-size:14px;cursor:pointer;padding:4px 8px;border-radius:4px;border:1px solid transparent;transition:all 0.15s;white-space:nowrap;}
+  .cal-month-label:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  /* Month picker grid */
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .cal-month-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px;}
+  .cal-year-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;}
+  .cal-pick-item{text-align:center;padding:8px 4px;font-size:13px;border-radius:4px;cursor:pointer;border:1px solid transparent;transition:all 0.1s;}
+  .cal-pick-item:hover:not(.future-item){background:#f0f6ff;border-color:var(--accent2);color:var(--accent2);}
+  .cal-pick-item.current{font-weight:700;color:var(--accent2);}
+  .cal-pick-item.future-item{color:var(--border2);cursor:default;}
+  .cal-dow{text-align:center;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:0.5px;padding:4px 0 8px;text-transform:uppercase;}
+  .cal-day{text-align:center;padding:7px 2px;font-size:13px;border-radius:4px;cursor:pointer;transition:all 0.1s;border:1px solid transparent;}
+  .cal-day:hover:not(.empty):not(.future){background:#f0f6ff;border-color:var(--accent2);color:var(--accent2);}
+  .cal-day.today{font-weight:700;color:var(--accent2);}
+  .cal-day.selected{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+  .cal-day.empty,.cal-day.future{cursor:default;color:var(--border2);}
+  .cal-actions{margin-top:12px;display:flex;gap:6px;}
+  .cal-action-btn{flex:1;padding:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;border-radius:4px;cursor:pointer;transition:all 0.15s;}
+  .cal-action-btn.primary{background:var(--accent2);color:#fff;border:none;}
+  .cal-action-btn.primary:hover{background:#154a8a;}
+  .cal-action-btn.secondary{background:var(--surface);border:1px solid var(--border2);color:var(--text2);}
+  .cal-action-btn.secondary:hover{border-color:var(--text);color:var(--text);}
+  .cal-day.range-start{background:var(--accent2);color:#fff;border-radius:4px 0 0 4px;}
+  .cal-day.range-end{background:var(--accent2);color:#fff;border-radius:0 4px 4px 0;}
+  .cal-day.range-start.range-end{border-radius:4px;}
+  .cal-day.in-range{background:#dbeafe;color:var(--accent2);border-radius:0;border-color:transparent;}
+  .cal-day.range-start,.cal-day.range-end{border-color:var(--accent2);}
+  .cal-range-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:8px;min-height:16px;}
+
+  .days-select{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:8px 32px 8px 12px;font-family:'DM Sans',sans-serif;font-size:13px;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;border-radius:4px;}
+  .btn-primary{background:var(--accent2);color:#fff;border:none;padding:9px 22px;font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;cursor:pointer;border-radius:4px;transition:background 0.15s;white-space:nowrap;}
+  .btn-primary:hover{background:#154a8a;}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-outline{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:9px 16px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-radius:4px;transition:all 0.15s;white-space:nowrap;}
+  .btn-outline:hover{border-color:var(--text);color:var(--text);}
+
+  .main{padding:24px 0 40px;}
+
+  .alert-bar{padding:12px 16px;margin-bottom:20px;font-size:13px;display:flex;align-items:center;gap:8px;border-radius:6px;border-left:4px solid;}
+  .alert-bar.error{background:#fff5f5;border-color:var(--accent);color:#b03030;}
+  .alert-bar.info{background:#f0f6ff;border-color:var(--accent2);color:var(--accent2);}
+  .alert-bar.success{background:#f0fdf5;border-color:var(--delivered);color:var(--delivered);}
+  .alert-bar.hidden{display:none;}
+
+  .setup-panel{background:#f0f6ff;border:1px solid #c5d8f5;border-left:4px solid var(--accent2);padding:20px 24px;margin-bottom:24px;border-radius:6px;}
+  .setup-panel h3{color:var(--accent2);font-size:14px;font-weight:600;margin-bottom:10px;}
+  .setup-panel ol{padding-left:20px;line-height:2.2;font-size:13px;color:var(--text2);}
+  .setup-panel code{font-family:'DM Mono',monospace;font-size:11px;background:rgba(26,86,160,0.1);padding:1px 6px;color:var(--accent2);border-radius:3px;}
+  .setup-panel a{color:var(--accent2);}
+  .setup-panel.hidden{display:none;}
+
+  .stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:24px;}
+  @media(max-width:1100px){.stats-bar{grid-template-columns:repeat(3,1fr);}}
+  @media(max-width:600px){.stats-bar{grid-template-columns:repeat(2,1fr);}}
+  .stat-cell{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;box-shadow:var(--shadow);transition:box-shadow 0.2s,transform 0.15s;}
+  .stat-cell.clickable{cursor:pointer;}
+  .stat-cell.clickable:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px);}
+  .stat-cell.clickable.active{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(26,86,160,0.15),var(--shadow);}
+  .stat-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+  .stat-value{font-family:'DM Serif Display',serif;font-size:38px;font-weight:400;line-height:1;}
+  .v-default{color:var(--text);}.v-delivered{color:var(--delivered);}.v-transit{color:var(--transit);}.v-label{color:var(--label-c);}.v-muted{color:var(--muted);}.v-accent{color:var(--accent);}
+
+  .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .search-box{flex:1;min-width:240px;background:var(--surface);border:1px solid var(--border2);padding:10px 16px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none;border-radius:4px;transition:border-color 0.2s,box-shadow 0.2s;}
+  .search-box:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(26,86,160,0.1);}
+  .search-box::placeholder{color:var(--muted);}
+  .filter-btn{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:9px 16px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;border-radius:4px;transition:all 0.15s;white-space:nowrap;}
+  .filter-btn:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  .filter-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);overflow:hidden;overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;}
+  thead{background:var(--surface2);border-bottom:2px solid var(--border);}
+  th{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:13px 18px;text-align:left;white-space:nowrap;cursor:pointer;user-select:none;transition:color 0.15s;}
+  th:hover{color:var(--text);}th.sorted{color:var(--accent2);}
+  tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s;}
+  tbody tr:last-child{border-bottom:none;}
+  tbody tr:hover{background:#f5f9ff;}
+  tbody tr.today-row{background:#eef6ff;}
+  td{padding:14px 18px;vertical-align:middle;white-space:nowrap;}
+  .order-id{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent2);font-weight:500;}
+  .order-link{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent2);font-weight:500;text-decoration:none;}
+  .check-status-btn{
+    display:inline-block;margin-left:6px;font-size:10px;font-family:'DM Sans',sans-serif;
+    font-weight:600;padding:2px 7px;border-radius:3px;cursor:pointer;border:1px solid var(--border2);
+    background:var(--surface2);color:var(--muted);transition:all 0.15s;vertical-align:middle;
+  }
+  .check-status-btn:hover{border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  .check-status-btn.checking{border-color:var(--transit);color:var(--transit);background:#fff8ee;}
+  .check-status-btn.checked{border-color:var(--delivered);color:var(--delivered);background:#f0fdf5;}
+  .check-status-btn.error{border-color:var(--accent);color:var(--accent);background:#fff5f5;}
+  .verified-tag{font-size:10px;font-weight:600;color:var(--delivered);margin-left:5px;opacity:0.7;vertical-align:middle;}
+  .order-link:hover{text-decoration:underline;color:var(--accent);}
+  .item-name{max-width:260px;overflow:hidden;text-overflow:ellipsis;font-weight:500;font-size:13px;}
+  .item-id{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);display:block;margin-top:2px;}
+  .item-id a{color:var(--muted);text-decoration:none;}
+  .item-id a:hover{color:var(--accent2);text-decoration:underline;}
+  .seller-name{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);}
+  .seller-link{font-family:'DM Mono',monospace;font-size:11px;color:var(--accent2);text-decoration:none;}
+  .seller-link:hover{text-decoration:underline;color:var(--accent);}
+  .carrier-badge{display:inline-block;font-family:'DM Mono',monospace;font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;letter-spacing:0.5px;font-weight:500;}
+  .price{font-family:'DM Mono',monospace;font-size:13px;font-weight:500;}
+  .no-val{font-size:13px;color:var(--muted);}
+
+  /* Tracking links */
+  .tracking-wrap{display:flex;flex-direction:column;gap:3px;}
+  .tracking-link{font-family:'DM Mono',monospace;font-size:12px;color:var(--accent2);text-decoration:none;cursor:pointer;transition:all 0.15s;display:inline-flex;align-items:center;gap:5px;}
+  .tracking-link:hover:not(.checking){text-decoration:underline;color:var(--accent);}
+  .tracking-link.checking{opacity:0.6;pointer-events:none;}
+  .tracking-link.is-delivered{color:var(--delivered)!important;font-weight:600;}
+  .tracking-link.is-transit{color:var(--transit)!important;}
+  .track-badge{font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600;}
+  .track-badge.delivered{background:#dcfce7;color:#166534;}
+  .track-badge.transit{background:#fef3c7;color:#92400e;}
+  .t-spinner{display:inline-block;width:10px;height:10px;border:1.5px solid var(--border2);border-top-color:var(--accent2);border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;}
+
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 12px;border-radius:20px;white-space:nowrap;}
+  .status::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+  .status.delivered{color:#166534;background:#dcfce7;}
+  .status.transit{color:#92400e;background:#fef3c7;}
+  .status.label{color:#5b21b6;background:#ede9fe;}
+  .status.pending{color:var(--muted);background:var(--surface2);border:1px solid var(--border);}
+  .delivered-date{font-size:10px;color:var(--delivered);margin-top:3px;font-family:'DM Mono',monospace;opacity:0.8;}
+  .qty-badge{font-size:12px;font-weight:600;color:var(--text2);font-family:'DM Mono',monospace;}
+  .delivery-date-val{font-size:12px;color:var(--transit);font-family:'DM Mono',monospace;font-weight:500;}
+  .note-cell{min-width:320px;max-width:420px;}
+  .note-wrap{position:relative;}
+  .note-input{width:100%;border:none;background:transparent;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text2);padding:8px 10px;border-radius:4px;outline:none;resize:none;line-height:1.5;min-height:72px;transition:background 0.15s,box-shadow 0.15s;}
+  .note-input:hover{background:var(--surface2);}
+  .note-input:focus{background:var(--surface2);box-shadow:0 0 0 2px rgba(26,86,160,0.15);}
+  .note-input::placeholder{color:var(--muted);font-style:italic;}
+  .note-save-btn{display:none;margin-top:4px;padding:3px 10px;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;border:none;border-radius:4px;background:var(--accent2);color:#fff;cursor:pointer;transition:all 0.15s;}
+  .note-save-btn:hover{background:#154a8a;}
+  .note-save-btn.saved{background:var(--delivered);pointer-events:none;}
+  .note-wrap:focus-within .note-save-btn{display:inline-block;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+  .status.transit::before{animation:pulse 1.8s infinite;}
+
+  .pagination{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-top:1px solid var(--border);background:var(--surface2);flex-wrap:wrap;gap:10px;}
+  .pagination-info{font-size:13px;color:var(--muted);}
+  .pagination-info strong{color:var(--text);}
+  .pagination-controls{display:flex;align-items:center;gap:6px;}
+  .page-btn{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;border-radius:4px;transition:all 0.15s;font-family:'DM Sans',sans-serif;}
+  .page-btn:hover:not(:disabled){border-color:var(--accent2);color:var(--accent2);background:#f0f6ff;}
+  .page-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .page-btn.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+  .page-size-select{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:6px 28px 6px 10px;font-size:12px;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;border-radius:4px;font-family:'DM Sans',sans-serif;}
+
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .empty-state{text-align:center;padding:64px 20px;color:var(--muted);}
+  .empty-state .icon{font-size:40px;margin-bottom:14px;}
+  .empty-state .title{font-size:16px;font-weight:600;color:var(--text2);margin-bottom:6px;}
+  .empty-state .sub{font-size:13px;}
+
+  footer{padding:20px 0;margin-top:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+  footer p{font-size:12px;color:var(--muted);}
+  .live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--delivered);margin-right:6px;animation:pulse 2s infinite;vertical-align:middle;}
+
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .fadein{animation:fadeUp 0.3s ease both;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <h1>Order<em>Radar</em></h1>
+    <p>eBay Buyer Dashboard — Live</p>
+  </div>
+  <div class="header-right">
+    <a href="/sellers.html" target="_blank" style="font-size:13px;color:var(--accent2);text-decoration:none;font-weight:500;padding:6px 12px;border:1px solid var(--border2);border-radius:4px;transition:all 0.15s;white-space:nowrap;" onmouseover="this.style.background='var(--accent2)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='var(--accent2)'">🏪 Top Sellers</a>
+
+    <!-- Calendar date picker -->
+    <div class="cal-wrap">
+      <div class="cal-btn" id="calBtn" onclick="toggleCal()">
+        📅 <span id="calBtnLabel">Pick a date</span>
+      </div>
+      <div class="cal-popup" id="calPopup">
+        <div class="cal-header">
+          <button class="cal-nav" id="calNavPrev" onclick="calNavPrev()">‹</button>
+          <span class="cal-month-label" id="calMonthLabel" onclick="cycleCalView()"></span>
+          <button class="cal-nav" id="calNavNext" onclick="calNavNext()">›</button>
+        </div>
+        <div id="calGrid"></div>
+        <div class="cal-range-hint" id="calRangeHint">Click a date or drag to select a range</div>
+        <div class="cal-actions">
+          <button class="cal-action-btn primary" id="calApplyBtn" onclick="applyCalFilter()" disabled>Apply</button>
+          <button class="cal-action-btn secondary" onclick="clearCalFilter()">✕ Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <select class="days-select" id="daysSelect" onchange="onRangeChange()">
+      <option value="1">Today</option>
+      <option value="yesterday">Yesterday</option>
+      <option value="3">Last 3 Days</option>
+      <option value="7">Last 7 Days</option>
+      <option value="14">Last 14 Days</option>
+      <option value="30">Last 30 Days</option>
+      <option value="89">Last 89 Days</option>
+    </select>
+    <button class="btn-primary" id="syncBtn" onclick="fetchOrders()">↻ Sync eBay</button>
+  </div>
+</header>
+
+<div class="main"><div class="container">
+
+  <div class="setup-panel fadein" id="setupPanel">
+    <h3>🔌 Connect your eBay Account</h3>
+    <ol>
+      <li>Go to <a href="https://developer.ebay.com" target="_blank">developer.ebay.com</a> → create an app → copy your <code>App ID</code>, <code>Dev ID</code>, <code>Cert ID</code></li>
+      <li>Click <strong>"User Tokens"</strong> → <strong>"Get a User Token"</strong> → sign in with your buyer account → copy token</li>
+      <li>Add all four values to your Render environment variables and redeploy</li>
+      <li>Click <strong>↻ Sync eBay</strong> to load your orders</li>
+    </ol>
+  </div>
+
+  <div class="alert-bar hidden fadein" id="alertBar"></div>
+
+  <div class="stats-bar fadein">
+    <div class="stat-cell"><div class="stat-label">Total Orders</div><div class="stat-value v-default" id="statTotal">—</div></div>
+    <div class="stat-cell clickable" id="scDelivered" onclick="toggleStatFilter('delivered','scDelivered')"><div class="stat-label">Delivered</div><div class="stat-value v-delivered" id="statDelivered">—</div></div>
+    <div class="stat-cell clickable" id="scTransit" onclick="toggleStatFilter('transit','scTransit')"><div class="stat-label">In Transit</div><div class="stat-value v-transit" id="statTransit">—</div></div>
+    <div class="stat-cell clickable" id="scPending" onclick="toggleStatFilter('pending','scPending')"><div class="stat-label">Pending</div><div class="stat-value v-muted" id="statPending">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Total Qty</div><div class="stat-value v-default" id="statQty">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Total Spent</div><div class="stat-value v-accent" id="statSpent">—</div></div>
+  </div>
+
+  <div class="toolbar fadein">
+    <input class="search-box" type="text" id="searchInput" placeholder="🔍  Search by order ID, item, tracking number, or seller..." oninput="onSearch()">
+    <button class="filter-btn active" id="fbAll" onclick="setFilter('all',this)">All Orders</button>
+    <button class="filter-btn" id="fbDelivered" onclick="setFilter('delivered',this)">Delivered</button>
+    <button class="filter-btn" id="fbTransit" onclick="setFilter('transit',this)">In Transit</button>
+    <button class="filter-btn" id="fbPending" onclick="setFilter('pending',this)">Pending</button>
+    <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
+  </div>
+
+  <div class="table-wrap fadein">
+    <table>
+      <thead>
+        <tr>
+          <th id="th-orderId" onclick="sortBy('orderId')">Order #</th>
+          <th id="th-item" onclick="sortBy('item')">Item</th>
+          <th id="th-seller" onclick="sortBy('seller')">Seller</th>
+          <th id="th-qty" onclick="sortBy('quantity')" style="text-align:center;">Qty</th>
+          <th id="th-price" onclick="sortBy('price')">Paid</th>
+          <th id="th-carrier" onclick="sortBy('carrier')">Carrier</th>
+          <th>Tracking #</th>
+          <th>Notes</th>
+          <th id="th-status" onclick="sortBy('status')">Status</th>
+          <th id="th-deliveryDate">Delivery Date</th>
+          <th id="th-date" onclick="sortBy('date')">Ordered</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="8"><div class="empty-state">
+          <div class="icon">📦</div>
+          <div class="title">No orders loaded yet</div>
+          <div class="sub">Click ↻ Sync eBay to load your purchases</div>
+        </div></td></tr>
+      </tbody>
+    </table>
+    <div class="pagination" id="paginationBar" style="display:none;">
+      <div class="pagination-info" id="pageInfo"></div>
+      <div class="pagination-controls">
+        <span style="font-size:12px;color:var(--muted);margin-right:4px;">Per page:</span>
+        <select class="page-size-select" id="pageSizeSelect" onchange="onPageSizeChange()">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="250">250</option>
+          <option value="9999">All</option>
+        </select>
+        <button class="page-btn" id="btnPrev" onclick="goPage(-1)">← Prev</button>
+        <div id="pageNumbers" style="display:flex;gap:4px;"></div>
+        <button class="page-btn" id="btnNext" onclick="goPage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p><span class="live-dot"></span>Last synced: <span id="lastSync">never</span> · <span id="orderCountLabel"></span></p>
+    <p>OrderRadar · eBay Trading API · Click any tracking # to verify delivery</p>
+  </footer>
+
+</div></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allOrders = [];
+let currentFilter = 'all';
+let sortKey = 'date', sortDir = -1;
+let currentPage = 1, pageSize = 50;
+// Calendar state
+let calFilterDate = null;   // applied filter (single Date or {from, to})
+let calRangeStart = null;   // first click in current selection
+let calRangeEnd   = null;   // second click (or null if only one picked)
+let calHoverDate  = null;   // for hover preview
+let calViewYear, calViewMonth;
+const statusLabels = {delivered:'Delivered',transit:'In Transit',pending:'Pending',out_for_delivery:'Out for Delivery'};
+const today = new Date();
+const todayStr = today.toDateString();
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  calViewYear = today.getFullYear();
+  calViewMonth = today.getMonth();
+  renderCal();
+  checkHealth();
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.cal-wrap')) {
+      document.getElementById('calPopup').classList.remove('open');
+    }
+  });
+});
+
+// ── CALENDAR ──────────────────────────────────────────────────────────────────
+const MONTHS     = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// calView: 'day' | 'month' | 'year'
+let calView = 'day';
+
+function toggleCal() { document.getElementById('calPopup').classList.toggle('open'); }
+
+// Clicking the month/year label cycles through views: day → month → year → day
+function cycleCalView() {
+  if (calView === 'day')   calView = 'month';
+  else if (calView === 'month') calView = 'year';
+  else calView = 'day';
+  renderCal();
+}
+
+// Prev/Next arrows behave differently per view
+function calNavPrev() {
+  if (calView === 'day')   { calViewMonth--; if (calViewMonth < 0)  { calViewMonth = 11; calViewYear--; } }
+  else if (calView === 'month') { calViewYear--; }
+  else if (calView === 'year')  { calViewYear -= 12; }
+  renderCal();
+}
+function calNavNext() {
+  if (calView === 'day')   { calViewMonth++; if (calViewMonth > 11) { calViewMonth = 0;  calViewYear++; } }
+  else if (calView === 'month') { calViewYear++; }
+  else if (calView === 'year')  { calViewYear += 12; }
+  renderCal();
+}
+
+function renderCal() {
+  const grid = document.getElementById('calGrid');
+  const label = document.getElementById('calMonthLabel');
+  grid.innerHTML = '';
+
+  if (calView === 'year') {
+    const startYear = Math.floor(calViewYear / 12) * 12;
+    label.textContent = startYear + ' – ' + (startYear + 11);
+    grid.className = 'cal-year-grid';
+    for (let y = startYear; y < startYear + 12; y++) {
+      const el = document.createElement('div');
+      const isFuture = y > today.getFullYear();
+      const isCurrent = y === today.getFullYear();
+      el.className = 'cal-pick-item' + (isCurrent?' current':'') + (isFuture?' future-item':'');
+      el.textContent = y;
+      if (!isFuture) el.onclick = () => { calViewYear = y; calView = 'month'; renderCal(); };
+      grid.appendChild(el);
+    }
+
+  } else if (calView === 'month') {
+    label.textContent = String(calViewYear);
+    grid.className = 'cal-month-grid';
+    MONTHS_SHT.forEach((name, idx) => {
+      const el = document.createElement('div');
+      const isFuture = calViewYear > today.getFullYear() ||
+                       (calViewYear === today.getFullYear() && idx > today.getMonth());
+      const isCurrent = calViewYear === today.getFullYear() && idx === today.getMonth();
+      el.className = 'cal-pick-item' + (isCurrent?' current':'') + (isFuture?' future-item':'');
+      el.textContent = name;
+      if (!isFuture) el.onclick = () => { calViewMonth = idx; calView = 'day'; renderCal(); };
+      grid.appendChild(el);
+    });
+
+  } else {
+    // ── Day picker ───────────────────────────────────────────────────────────
+    label.textContent = MONTHS[calViewMonth] + ' ' + calViewYear;
+    grid.className = 'cal-grid';
+    ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+      const dEl = document.createElement('div'); dEl.className = 'cal-dow'; dEl.textContent = d; grid.appendChild(dEl);
+    });
+    const firstDay = new Date(calViewYear, calViewMonth, 1).getDay();
+    const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+    for (let i = 0; i < firstDay; i++) {
+      const el = document.createElement('div'); el.className = 'cal-day empty'; grid.appendChild(el);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const thisDate = new Date(calViewYear, calViewMonth, d);
+      const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 89);
+      const isFuture = thisDate > today;
+      const isTooOld = thisDate < ninetyDaysAgo;
+      const isToday  = thisDate.toDateString() === todayStr;
+      const el = document.createElement('div');
+      el.className = 'cal-day' + (isFuture?' future':'') + (isTooOld?' future':'') + (isToday?' today':'');
+      el.textContent = d;
+      el.dataset.ts = +thisDate;
+      if (!isFuture && !isTooOld) {
+        el.onclick = () => calDayClick(new Date(calViewYear, calViewMonth, d));
+      }
+      grid.appendChild(el);
+    }
+
+    // Hover: update classes in-place — NEVER re-render (re-render destroys DOM mid-click)
+    grid.onmousemove = (e) => {
+      const dayEl = e.target.closest('.cal-day:not(.future):not(.empty)');
+      if (!dayEl || !dayEl.dataset.ts) return;
+      const hov = new Date(+dayEl.dataset.ts);
+      if (calHoverDate && calHoverDate.toDateString() === hov.toDateString()) return;
+      calHoverDate = hov;
+      updateRangeClasses();
+    };
+    grid.onmouseleave = () => {
+      calHoverDate = null;
+      updateRangeClasses();
+    };
+
+    // Apply initial range classes
+    updateRangeClasses();
+  }
+  updateCalHint();
+}
+
+// Update range/hover highlight classes IN PLACE — never re-render the grid
+function updateRangeClasses() {
+  const grid = document.getElementById('calGrid');
+  if (!grid) return;
+  const days = grid.querySelectorAll('.cal-day[data-ts]');
+  const anchor = calRangeStart;
+  const endPt  = calRangeEnd || (anchor ? calHoverDate : null);
+  const lo = anchor && endPt ? new Date(Math.min(+anchor, +endPt)) : anchor;
+  const hi = anchor && endPt ? new Date(Math.max(+anchor, +endPt)) : anchor;
+
+  days.forEach(el => {
+    const ts = +el.dataset.ts;
+    const d  = new Date(ts);
+    // Remove all range classes
+    el.classList.remove('range-start','range-end','in-range');
+    if (!lo) return;
+    const isStart = lo && d.toDateString() === lo.toDateString();
+    const isEnd   = hi && d.toDateString() === hi.toDateString();
+    const inRange = lo && hi && d >= lo && d <= hi;
+    if (isStart) el.classList.add('range-start');
+    if (isEnd)   el.classList.add('range-end');
+    if (inRange && !isStart && !isEnd) el.classList.add('in-range');
+  });
+}
+
+function calDayClick(date) {
+  if (!calRangeStart || calRangeEnd) {
+    // Start a fresh selection
+    calRangeStart = date;
+    calRangeEnd   = null;
+  } else {
+    // Second click — complete the range
+    calRangeEnd = date;
+    if (calRangeEnd < calRangeStart) {
+      [calRangeStart, calRangeEnd] = [calRangeEnd, calRangeStart];
+    }
+  }
+  document.getElementById('calApplyBtn').disabled = false;
+  updateRangeClasses();
+  updateCalHint();
+}
+
+function updateCalHint() {
+  const hint = document.getElementById('calRangeHint');
+  if (!hint) return;
+  if (!calRangeStart) {
+    hint.textContent = 'Click a date, or click two dates for a range';
+  } else if (!calRangeEnd) {
+    const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    hint.textContent = fmt(calRangeStart) + ' — click another date to set range end';
+  } else {
+    const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const lo = new Date(Math.min(calRangeStart,calRangeEnd));
+    const hi = new Date(Math.max(calRangeStart,calRangeEnd));
+    hint.textContent = lo.toDateString()===hi.toDateString()
+      ? fmt(lo)
+      : fmt(lo) + ' – ' + fmt(hi);
+  }
+}
+
+function applyCalFilter() {
+  if (!calRangeStart) return;
+  const lo = calRangeEnd ? new Date(Math.min(+calRangeStart,+calRangeEnd)) : calRangeStart;
+  const hi = calRangeEnd ? new Date(Math.max(+calRangeStart,+calRangeEnd)) : calRangeStart;
+
+  // eBay API limit: no orders older than 89 days
+  const ninetyDaysAgo = new Date(today); ninetyDaysAgo.setDate(today.getDate() - 89);
+  if (lo < ninetyDaysAgo) {
+    showAlert('error', '⚠ eBay only allows fetching orders from the last 89 days. Please select a more recent date range.');
+    return;
+  }
+  calFilterDate = { from: lo, to: hi };
+  document.getElementById('calBtn').classList.add('active');
+  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  document.getElementById('calBtnLabel').textContent =
+    lo.toDateString()===hi.toDateString() ? fmt(lo) : fmt(lo) + ' – ' + fmt(hi);
+  document.getElementById('calPopup').classList.remove('open');
+  currentPage = 1;
+  fetchOrdersForDate(lo, hi);
+}
+
+function clearCalFilter() {
+  calFilterDate = null; calRangeStart = null; calRangeEnd = null; calHoverDate = null;
+  calView = 'day';
+  document.getElementById('calApplyBtn').disabled = true;
+  renderCal();
+  document.getElementById('calBtn').classList.remove('active');
+  document.getElementById('calBtnLabel').textContent = 'Pick a date';
+  document.getElementById('calPopup').classList.remove('open');
+  currentPage = 1;
+  renderTable();
+}
+
+// ── Range dropdown ────────────────────────────────────────────────────────────
+function onRangeChange() {
+  calFilterDate = null; calRangeStart = null; calRangeEnd = null; calHoverDate = null;
+  document.getElementById('calApplyBtn').disabled = true;
+  document.getElementById('calBtn').classList.remove('active');
+  document.getElementById('calBtnLabel').textContent = 'Pick a date';
+  fetchOrders();
+}
+
+// ── Health ────────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch('/api/health');
+    const d = await r.json();
+    if (d.configured) { document.getElementById('setupPanel').classList.add('hidden'); showAlert('info','✓ eBay credentials detected — click Sync eBay to load your orders'); }
+    else showAlert('error','⚠ Credentials not found — add them to Render environment variables');
+  } catch { showAlert('error','⚠ Cannot reach backend server.'); }
+}
+
+// ── Fetch orders ──────────────────────────────────────────────────────────────
+async function fetchOrders() {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Syncing…';
+  const val = document.getElementById('daysSelect').value;
+  const yesterdayStr = new Date(today.getFullYear(), today.getMonth(), today.getDate()-1).toDateString();
+
+  // Build explicit date range so "Today" means midnight→now, not last 24h
+  let fetchUrl;
+  if (val === '1') {
+    // Today: midnight of today → right now
+    const from = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+    fetchUrl = `/api/orders?fromDate=${from.toISOString()}&toDate=${today.toISOString()}`;
+  } else if (val === 'yesterday') {
+    // Yesterday: midnight → 23:59:59
+    const yDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const from  = new Date(yDate.getFullYear(), yDate.getMonth(), yDate.getDate(), 0, 0, 0);
+    const to    = new Date(yDate.getFullYear(), yDate.getMonth(), yDate.getDate(), 23, 59, 59);
+    fetchUrl = `/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`;
+  } else {
+    const daysBack = parseInt(val, 10);
+    const from = new Date(today);
+    from.setDate(from.getDate() - daysBack);
+    fetchUrl = `/api/orders?fromDate=${from.toISOString()}&toDate=${today.toISOString()}`;
+  }
+
+  try {
+    const res = await fetch(fetchUrl);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+    allOrders = data.orders
+      .filter(() => true)
+      .map(o => ({
+        orderId: o.extendedOrderId || o.orderId,
+        rawOrderId: o.orderId,
+        item: o.items.map(i => i.title).join(' + '),
+        itemIds: o.items.map(i => i.itemId).filter(Boolean),
+        seller: o.seller || o.items.map(i=>i.seller).filter(Boolean)[0] || '',
+        allTracking: o.tracking,
+        trackingNumber: o.tracking[0]?.trackingNumber || '',
+        carrier: o.tracking[0]?.carrier || '',
+        status: o.deliveryStatus,
+        confirmedStatus: null,
+        deliveryDate: null,
+        note: '',
+        quantity: o.totalQuantity || o.items.reduce((s,i)=>s+(i.quantity||1),0) || 1,
+        date: o.createdDate,
+        dateObj: o.createdDate ? new Date(o.createdDate) : null,
+        actualDeliveryTime: o.actualDeliveryTime || null,
+        price: o.totalAmount,
+        currency: o.currency,
+      }));
+
+    // Load notes first so they appear immediately in the table
+    try {
+      const nr = await fetch('/api/notes');
+      const notesData = await nr.json();
+      allOrders.forEach(o => {
+        const id = o.extendedOrderId || o.orderId;
+        if (notesData[id]) o.note = notesData[id].note;
+      });
+    } catch(e) {}
+
+    recomputeStats();
+    currentPage = 1;
+    renderTable();
+    document.getElementById('lastSync').textContent = new Date().toLocaleTimeString();
+    document.getElementById('setupPanel').classList.add('hidden');
+    showAlert('success', `✓ Loaded ${allOrders.length} orders`);
+    applyStoredStatuses();
+  } catch(err) { showAlert('error', `✗ Error: ${err.message}`); }
+  finally { btn.disabled=false; btn.textContent='↻ Sync eBay'; }
+}
+
+// ── Fetch orders for a specific calendar date ────────────────────────────────
+async function fetchOrdersForDate(fromDate, toDate) {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Syncing…';
+
+  // from = start of fromDate, to = end of toDate (or end of fromDate if single day)
+  const endDate = toDate || fromDate;
+  const from = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate(), 0, 0, 0);
+  const to   = new Date(endDate.getFullYear(),  endDate.getMonth(),  endDate.getDate(),  23, 59, 59);
+
+  try {
+    const res = await fetch(`/api/orders?fromDate=${from.toISOString()}&toDate=${to.toISOString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+    allOrders = data.orders.map(o => ({
+      orderId: o.extendedOrderId || o.orderId,
+      rawOrderId: o.orderId,
+      item: o.items.map(i => i.title).join(' + '),
+      itemIds: o.items.map(i => i.itemId).filter(Boolean),
+      seller: o.seller || o.items.map(i=>i.seller).filter(Boolean)[0] || '',
+      allTracking: o.tracking,
+      trackingNumber: o.tracking[0]?.trackingNumber || '',
+      carrier: o.tracking[0]?.carrier || '',
+      status: o.deliveryStatus,
+      confirmedStatus: null,
+      deliveryDate: null,
+      note: '',
+      quantity: o.totalQuantity || o.items.reduce((s,i)=>s+(i.quantity||1),0) || 1,
+      date: o.createdDate,
+      dateObj: o.createdDate ? new Date(o.createdDate) : null,
+      actualDeliveryTime: o.actualDeliveryTime || null,
+      price: o.totalAmount,
+      currency: o.currency,
+    }));
+
+    // Load notes first so they appear immediately
+    try {
+      const nr = await fetch('/api/notes');
+      const notesData = await nr.json();
+      allOrders.forEach(o => {
+        const id = o.extendedOrderId || o.orderId;
+        if (notesData[id]) o.note = notesData[id].note;
+      });
+    } catch(e) {}
+
+    recomputeStats();
+    currentPage = 1;
+    renderTable();
+    document.getElementById('lastSync').textContent = new Date().toLocaleTimeString();
+    document.getElementById('setupPanel').classList.add('hidden');
+    const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const label = from.toDateString()===to.toDateString() ? fmt(from) : fmt(from)+' – '+fmt(to);
+    showAlert('success', `✓ Loaded ${allOrders.length} orders for ${label}`);
+    applyStoredStatuses();
+  } catch(err) { showAlert('error', `✗ Error: ${err.message}`); }
+  finally { btn.disabled=false; btn.textContent='↻ Sync eBay'; }
+}
+
+// ── Auto-apply saved tracking statuses after every sync ───────────────────────
+async function applyStoredStatuses() {
+  try {
+    const [res, nr] = await Promise.all([
+      fetch('/api/tracking-statuses'),
+      fetch('/api/notes')
+    ]);
+    const store = await res.json();
+    const notesData = await nr.json().catch(() => ({}));
+
+    // Apply saved notes to order objects and update DOM
+    allOrders.forEach((o, idx) => {
+      const orderId = o.extendedOrderId || o.orderId;
+      if (notesData[orderId]) {
+        o.note = notesData[orderId].note;
+        // Update textarea in DOM if already rendered
+        const nc = document.querySelector(`textarea[data-orderid="${orderId}"]`);
+        if (nc && !nc.value) {
+          nc.value = o.note;
+          nc.style.height = 'auto';
+          nc.style.height = nc.scrollHeight + 'px';
+        }
+      }
+    });
+
+    let applied = 0;
+    allOrders.forEach((o, idx) => {
+      if (!o.trackingNumber) return;
+      const saved = store[o.trackingNumber];
+      if (!saved) return;
+      o.confirmedStatus = saved.status;
+      o.deliveryDate = saved.deliveryDate || null;
+      const sc = document.getElementById('statusCell_' + idx);
+      if (sc) {
+        const label = saved.status === 'delivered' ? 'Delivered' : saved.status === 'transit' ? 'In Transit' : saved.status;
+        const cls   = saved.status === 'delivered' ? 'delivered' : saved.status === 'transit' ? 'transit' : 'pending';
+        sc.innerHTML = `<span class="status ${cls}">${label}</span> <span class="verified-tag">✓ saved</span>`;
+      }
+      const dc = document.getElementById('deliveryDateCell_' + idx);
+      if (dc) {
+        dc.innerHTML = saved.deliveryDate
+          ? `<span class="delivery-date-val">${saved.deliveryDate}</span>`
+          : '<span class="no-val">—</span>';
+      }
+      applied++;
+    });
+    if (applied > 0) {
+      recomputeStats();
+      console.log('Auto-applied', applied, 'saved tracking statuses');
+    }
+    // Now auto-check anything we don't have a saved status for
+    autoCheckAllTracking(store);
+  } catch(e) { console.error('applyStoredStatuses error:', e.message); }
+}
+
+// ── Auto-check all tracking numbers after sync ────────────────────────────────
+async function autoCheckAllTracking(savedStore) {
+  const toCheck = allOrders.filter(o =>
+    o.trackingNumber && !savedStore[o.trackingNumber]
+  );
+  if (toCheck.length === 0) return;
+  console.log('Auto-checking', toCheck.length, 'tracking numbers in parallel...');
+
+  const BATCH = 30; // check 30 at a time
+  for (let i = 0; i < toCheck.length; i += BATCH) {
+    const batch = toCheck.slice(i, i + BATCH);
+    await Promise.all(batch.map(async o => {
+      const idx = allOrders.indexOf(o);
+      try {
+        const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(o.carrier)}&trackingNumber=${encodeURIComponent(o.trackingNumber)}`);
+        const data = await res.json();
+        if (!data.status || data.status === 'unknown' || data.status === 'error') return;
+
+        o.confirmedStatus = data.status;
+        o.deliveryDate = data.deliveryDate || null;
+
+        const sc = document.getElementById('statusCell_' + idx);
+        if (sc) {
+          const label = data.status === 'delivered' ? 'Delivered' : data.status === 'transit' ? 'In Transit' : data.status;
+          const cls   = data.status === 'delivered' ? 'delivered' : 'transit';
+          sc.innerHTML = `<span class="status ${cls}">${label}</span> <span class="verified-tag">✓ usps</span>`;
+        }
+        const dc = document.getElementById('deliveryDateCell_' + idx);
+        if (dc) {
+          dc.innerHTML = data.deliveryDate
+            ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
+            : '<span class="no-val">—</span>';
+        }
+      } catch(e) {
+        console.error('Auto-check failed for', o.trackingNumber, ':', e.message);
+      }
+    }));
+    recomputeStats();
+  }
+  console.log('Auto-check complete.');
+}
+
+async function saveNoteBtn(btn) {
+  const textarea = btn.previousElementSibling;
+  btn.textContent = '…';
+  btn.disabled = true;
+  await saveNote(textarea);
+  btn.classList.add('saved');
+  btn.textContent = '✓ Saved';
+  btn.disabled = false;
+}
+
+async function saveNote(textarea) {
+  const orderId = textarea.dataset.orderid;
+  const note = textarea.value.trim();
+  const o = allOrders.find(o => (o.extendedOrderId || o.orderId) === orderId);
+  if (o) o.note = note;
+  try {
+    await fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, note })
+    });
+  } catch(e) { console.error('saveNote error:', e.message); }
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function recomputeStats() {
+  const eff = o => o.confirmedStatus || o.status;
+  document.getElementById('statTotal').textContent = allOrders.length;
+  animateNum('statDelivered', allOrders.filter(o=>eff(o)==='delivered').length);
+  animateNum('statTransit',   allOrders.filter(o=>eff(o)==='transit').length);
+  animateNum('statPending',   allOrders.filter(o=>eff(o)==='pending').length);
+  animateNum('statQty', allOrders.reduce((s,o)=>s+(o.quantity||1),0));
+  document.getElementById('statSpent').textContent =
+    '$' + allOrders.reduce((s,o)=>s+o.price,0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function animateNum(id, target) {
+  const el = document.getElementById(id);
+  let cur = parseInt(el.textContent)||0;
+  const step = Math.max(1, Math.ceil(Math.abs(target-cur)/20));
+  const t = setInterval(()=>{
+    cur = cur<target ? Math.min(cur+step,target) : Math.max(cur-step,target);
+    el.textContent = cur;
+    if(cur===target) clearInterval(t);
+  },25);
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function toggleStatFilter(statusKey, cellId) {
+  const cell = document.getElementById(cellId);
+  const isActive = cell.classList.contains('active');
+  ['scDelivered','scTransit','scLabel','scPending'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  setFilterDirect(isActive ? 'all' : statusKey);
+  if (!isActive) cell.classList.add('active');
+}
+
+function setFilter(f, btn) {
+  ['scDelivered','scTransit','scLabel','scPending'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  setFilterDirect(f);
+}
+
+function setFilterDirect(f) {
+  currentFilter = f; currentPage = 1;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  const map={all:'fbAll',delivered:'fbDelivered',transit:'fbTransit',pending:'fbPending'};
+  document.getElementById(map[f])?.classList.add('active');
+  renderTable();
+}
+
+function onSearch() { currentPage=1; renderTable(); }
+
+// ── Filtered + sorted list ────────────────────────────────────────────────────
+function getFiltered() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  return allOrders
+    .filter(o => {
+      const eff = o.confirmedStatus || o.status;
+      if (currentFilter !== 'all' && eff !== currentFilter) return false;
+      if (calFilterDate && o.dateObj) {
+        const lo = calFilterDate.from || calFilterDate;
+        const hi = calFilterDate.to   || calFilterDate;
+        const fromMid = new Date(lo.getFullYear(), lo.getMonth(), lo.getDate(), 0, 0, 0);
+        const toMid   = new Date(hi.getFullYear(), hi.getMonth(), hi.getDate(), 23, 59, 59);
+        if (o.dateObj < fromMid || o.dateObj > toMid) return false;
+      }
+      if (q && !(o.orderId.toLowerCase().includes(q)||o.item.toLowerCase().includes(q)||o.seller.toLowerCase().includes(q)||o.trackingNumber.toLowerCase().includes(q))) return false;
+      return true;
+    })
+    .sort((a,b) => {
+      let av=a[sortKey]??'', bv=b[sortKey]??'';
+      if (sortKey==='price') return (av-bv)*sortDir;
+      return String(av).localeCompare(String(bv))*sortDir;
+    });
+}
+
+// ── Render table ─────────────────────────────────────────────────────────────
+function renderTable() {
+  const filtered = getFiltered();
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total/pageSize));
+  if (currentPage>totalPages) currentPage=totalPages;
+  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize,total);
+  const page = filtered.slice(start,end);
+  const tbody = document.getElementById('tableBody');
+
+  if (!page.length) {
+    tbody.innerHTML=`<tr><td colspan="10"><div class="empty-state"><div class="icon">🔍</div><div class="title">No orders found</div><div class="sub">Try adjusting your search, filter, or date</div></div></td></tr>`;
+    document.getElementById('paginationBar').style.display='none';
+    document.getElementById('orderCountLabel').textContent='';
+    return;
+  }
+
+  tbody.innerHTML = page.map((o, i) => {
+    const globalIdx = allOrders.indexOf(o);
+    const eff = o.confirmedStatus || o.status;
+    const isToday = o.dateObj && o.dateObj.toDateString()===todayStr;
+    const dateStr = o.dateObj ? o.dateObj.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+
+    const trackingHtml = o.allTracking.length
+      ? `<div class="tracking-wrap">${o.allTracking.map(t => {
+          const tid = `tl_${globalIdx}_${t.trackingNumber.replace(/[^a-z0-9]/gi,'_')}`;
+          const isConfDel = o.confirmedStatus === 'delivered';
+          const isConfTrans = o.confirmedStatus === 'transit' || o.confirmedStatus === 'in_transit';
+          return `<a class="tracking-link${isConfDel?' is-delivered':isConfTrans?' is-transit':''}"
+            id="${tid}" href="#"
+            onclick="checkTracking(event,'${t.carrier}','${t.trackingNumber}','${tid}',${globalIdx});return false;"
+            title="Click to verify delivery status with carrier">
+            ${t.trackingNumber}
+            ${isConfDel ? '<span class="track-badge delivered">✓ Delivered</span>' : ''}
+            ${isConfTrans && !isConfDel ? '<span class="track-badge transit">In Transit</span>' : ''}
+          </a>`;
+        }).join('')}</div>`
+      : `<span class="no-val">—</span>`;
+
+    const carrierHtml = o.allTracking.length
+      ? [...new Set(o.allTracking.map(t=>t.carrier))].map(c=>`<span class="carrier-badge">${c}</span>`).join(' ')
+      : `<span class="no-val">—</span>`;
+
+    const rawId = o.rawOrderId || o.orderId;
+    const ebayOrderUrl = `https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(rawId)}`;
+    const itemIdsHtml = o.itemIds && o.itemIds.length
+      ? o.itemIds.map(id=>`<a class="item-id" href="https://www.ebay.com/itm/${id}" target="_blank">#${id}</a>`).join('')
+      : '';
+    const sellerHtml = o.seller
+      ? `<a class="seller-link" href="https://www.ebay.com/usr/${encodeURIComponent(o.seller)}" target="_blank">${o.seller}</a>`
+      : '<span class="no-val">—</span>';
+
+    const statusChecked = o.confirmedStatus !== null;
+    return `<tr class="${isToday?'today-row':''}">
+      <td>
+        <a class="order-link" href="${ebayOrderUrl}" target="_blank" title="Open order on eBay">${o.orderId}</a>
+      </td>
+      <td><div class="item-name" title="${o.item}">${o.item}</div>${itemIdsHtml}</td>
+      <td>${sellerHtml}</td>
+      <td style="text-align:center;"><span class="qty-badge">${o.quantity > 1 ? 'x'+o.quantity : o.quantity}</span></td>
+      <td><span class="price">${o.currency==='USD'?'$':o.currency+' '}${o.price.toFixed(2)}</span></td>
+      <td>${carrierHtml}</td>
+      <td>${trackingHtml}</td>
+      <td class="note-cell">
+        <div class="note-wrap">
+          <textarea class="note-input" rows="3" placeholder="Add note…"
+            data-orderid="${(o.extendedOrderId||o.orderId)}"
+            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';this.nextElementSibling.classList.remove('saved');this.nextElementSibling.textContent='Save';"
+          >${o.note ? o.note.replace(/</g,'&lt;') : ''}</textarea>
+          <button class="note-save-btn" onclick="saveNoteBtn(this)">Save</button>
+        </div>
+      </td>
+      <td id="statusCell_${globalIdx}">
+        <span class="status ${eff}">${statusLabels[eff]||eff}</span>
+        ${o.confirmedStatus ? '<span class="verified-tag">✓ eBay</span>' : ''}
+      </td>
+      <td id="deliveryDateCell_${globalIdx}">
+        ${eff !== 'delivered' && o.deliveryDate
+          ? `<span class="delivery-date-val">${o.deliveryDate}</span>`
+          : '<span class="no-val">—</span>'}
+      </td>
+      <td><span class="no-val">${dateStr}</span></td>
+    </tr>`;
+  }).join('');
+
+  // Pagination bar
+  document.getElementById('paginationBar').style.display='flex';
+  const fmt = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const calLabel = calFilterDate
+    ? ' for ' + (calFilterDate.from
+        ? (calFilterDate.from.toDateString()===calFilterDate.to.toDateString()
+            ? fmt(calFilterDate.from)
+            : fmt(calFilterDate.from)+' – '+fmt(calFilterDate.to))
+        : fmt(calFilterDate))
+    : '';
+  document.getElementById('pageInfo').innerHTML=`Showing <strong>${start+1}–${end}</strong> of <strong>${total}</strong> orders${calLabel}`;
+  document.getElementById('orderCountLabel').textContent=`${total} order${total!==1?'s':''} shown`;
+
+  const pageNumbers = document.getElementById('pageNumbers');
+  pageNumbers.innerHTML='';
+  let pages=[];
+  if(totalPages<=7){for(let i=1;i<=totalPages;i++)pages.push(i);}
+  else{
+    pages=[1];
+    if(currentPage>3)pages.push('...');
+    for(let i=Math.max(2,currentPage-1);i<=Math.min(totalPages-1,currentPage+1);i++)pages.push(i);
+    if(currentPage<totalPages-2)pages.push('...');
+    pages.push(totalPages);
+  }
+  pages.forEach(p=>{
+    if(p==='...'){const s=document.createElement('span');s.textContent='…';s.style.cssText='padding:6px 4px;color:var(--muted);font-size:13px;';pageNumbers.appendChild(s);}
+    else{const b=document.createElement('button');b.className='page-btn'+(p===currentPage?' active':'');b.textContent=p;b.onclick=()=>{currentPage=p;renderTable();window.scrollTo({top:0,behavior:'smooth'});};pageNumbers.appendChild(b);}
+  });
+  document.getElementById('btnPrev').disabled=currentPage<=1;
+  document.getElementById('btnNext').disabled=currentPage>=totalPages;
+
+  ['orderId','item','seller','carrier','status','date','price'].forEach(k=>{
+    const th=document.getElementById('th-'+k);if(th)th.className=k===sortKey?'sorted':'';
+  });
+}
+
+// ── Check tracking status on click ───────────────────────────────────────────
+// ── Check order status from eBay order page stepper ──────────────────────────
+// Reads the SVG stepper icons on the eBay order detail page to get true status.
+// icon-stepper-confirmation-24 = stage done, icon-stepper-upcoming-24 = not yet
+// Stages: [0]=Paid, [1]=Tracking/Shipped, [2]=Delivered
+async function checkOrderStatus(event, orderIdx, rawOrderId) {
+  event.stopPropagation();
+  const btn = event.currentTarget;
+  btn.classList.add('checking');
+  btn.textContent = '⟳ checking…';
+
+  try {
+    const res = await fetch(`/api/order-status?orderId=${encodeURIComponent(rawOrderId)}`);
+    const data = await res.json();
+
+    if (data.status && data.status !== 'unknown' && data.status !== 'error') {
+      allOrders[orderIdx].confirmedStatus = data.status;
+      allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
+      recomputeStats();
+
+      // Update status cell
+      const sc = document.getElementById('statusCell_' + orderIdx);
+      if (sc) {
+        sc.innerHTML = `<span class="status ${data.status}">${statusLabels[data.status] || data.status}</span> <span class="verified-tag">✓ eBay</span>`;
+      }
+
+      // Update delivery date cell — blank if delivered, show date otherwise
+      const dc = document.getElementById('deliveryDateCell_' + orderIdx);
+      if (dc) {
+        dc.innerHTML = data.status !== 'delivered' && data.deliveryDate
+          ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
+          : '<span class="no-val">—</span>';
+      }
+
+      btn.classList.remove('checking');
+      btn.classList.add('checked');
+      btn.textContent = '✓ verified';
+
+      const dateHint = data.deliveryDate ? ` (${data.deliveryDate})` : '';
+      const msg = {
+        delivered: `✓ eBay confirms DELIVERED — order ${rawOrderId}`,
+        transit: `📦 In Transit — arriving${dateHint}`,
+        pending: `⏳ Pending — estimated arrival${dateHint}`,
+      }[data.status] || `Status: ${data.status}`;
+      showAlert(data.status === 'delivered' ? 'success' : 'info', msg);
+
+    } else {
+      // Could not read page — open eBay directly so user can check manually
+      btn.classList.remove('checking');
+      btn.classList.add('error');
+      btn.textContent = '⚠ open eBay';
+      btn.onclick = () => window.open(`https://www.ebay.com/vod/FetchOrderDetails?orderId=${encodeURIComponent(rawOrderId)}`, '_blank');
+      showAlert('info', `Could not auto-check status — click "open eBay" to check manually`);
+    }
+  } catch(err) {
+    btn.classList.remove('checking');
+    btn.classList.add('error');
+    btn.textContent = '⚠ retry';
+    showAlert('error', `Check failed: ${err.message}`);
+  }
+}
+
+function carrierUrl(carrier, trackingNumber) {
+  const c = (carrier || '').toUpperCase();
+  const tn = trackingNumber || '';
+  if (c.includes('UPS') || tn.toUpperCase().startsWith('1Z'))
+    return `https://www.ups.com/track?tracknum=${tn}`;
+  if (c.includes('FEDEX') || /^\d{12}$|^\d{15}$/.test(tn))
+    return `https://www.fedex.com/apps/fedextrack/?tracknumbers=${tn}`;
+  if (c.includes('DHL'))
+    return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${tn}`;
+  return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tn}`;
+}
+
+async function checkTracking(event, carrier, trackingNumber, linkId, orderIdx) {
+  event.preventDefault();
+  // Open correct carrier page immediately
+  window.open(carrierUrl(carrier, trackingNumber), '_blank');
+
+  const link = document.getElementById(linkId);
+  if (!link || link.classList.contains('checking')) return;
+
+  link.classList.add('checking');
+  link.innerHTML = `<span class="t-spinner"></span> Checking…`;
+
+  try {
+    const res = await fetch(`/api/check-tracking?carrier=${encodeURIComponent(carrier)}&trackingNumber=${encodeURIComponent(trackingNumber)}`);
+    const data = await res.json();
+
+    if (data.status === 'delivered') {
+      allOrders[orderIdx].confirmedStatus = 'delivered';
+      allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
+      link.classList.remove('checking'); link.classList.add('is-delivered');
+      link.innerHTML = `${trackingNumber} <span class="track-badge delivered">✓ Delivered</span>`;
+      const sc = document.getElementById('statusCell_'+orderIdx);
+      if (sc) sc.innerHTML = `<span class="status delivered">Delivered</span> <span class="verified-tag">✓ saved</span>`;
+      const dc = document.getElementById('deliveryDateCell_'+orderIdx);
+      if (dc) dc.innerHTML = data.deliveryDate ? `<span class="delivery-date-val">${data.deliveryDate}</span>` : '<span class="no-val">—</span>';
+      recomputeStats();
+      showAlert('success', `✓ Delivered confirmed & saved: ${trackingNumber}`);
+      fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ trackingNumber, status: 'delivered', deliveryDate: data.deliveryDate || null, carrier }) });
+    } else if (data.status === 'transit') {
+      allOrders[orderIdx].confirmedStatus = 'transit';
+      allOrders[orderIdx].deliveryDate = data.deliveryDate || null;
+      link.classList.remove('checking'); link.classList.add('is-transit');
+      link.innerHTML = `${trackingNumber} <span class="track-badge transit">In Transit</span>`;
+      const sc = document.getElementById('statusCell_'+orderIdx);
+      if (sc) sc.innerHTML = `<span class="status transit">In Transit</span> <span class="verified-tag">✓ saved</span>`;
+      const dc = document.getElementById('deliveryDateCell_'+orderIdx);
+      if (dc) dc.innerHTML = data.deliveryDate
+        ? `<span class="delivery-date-val">${data.deliveryDate}</span>`
+        : '<span class="no-val">—</span>';
+      recomputeStats();
+      fetch('/api/tracking-statuses', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ trackingNumber, status: 'transit', deliveryDate: data.deliveryDate || null, carrier }) });
+    } else {
+      link.classList.remove('checking');
+      link.textContent = trackingNumber;
+    }
+  } catch(err) {
+    link.classList.remove('checking');
+    link.textContent = trackingNumber;
+  }
+}
+
+function goPage(dir){const filtered=getFiltered();const tp=Math.ceil(filtered.length/pageSize);currentPage=Math.max(1,Math.min(currentPage+dir,tp));renderTable();window.scrollTo({top:0,behavior:'smooth'});}
+function onPageSizeChange(){pageSize=parseInt(document.getElementById('pageSizeSelect').value,10);currentPage=1;renderTable();}
+function sortBy(key){if(sortKey===key)sortDir*=-1;else{sortKey=key;sortDir=1;}currentPage=1;renderTable();}
+
+function exportCSV() {
+  const orders = getFiltered();
+  if(!orders.length) return;
+  const headers=['Order ID','Item','Seller','Carrier','Tracking Number','Status','Confirmed Status','Date Ordered','Amount'];
+  const rows=orders.map(o=>[
+    o.orderId,`"${o.item.replace(/"/g,'""')}"`,o.seller,
+    o.allTracking.map(t=>t.carrier).join(' | '),
+    o.allTracking.map(t=>t.trackingNumber).join(' | '),
+    o.status, o.confirmedStatus||'',
+    o.dateObj?o.dateObj.toLocaleString():'',o.price.toFixed(2)
+  ]);
+  const csv=[headers,...rows].map(r=>r.join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`ebay-orders-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+function showAlert(type,msg){
+  const bar=document.getElementById('alertBar');
+  bar.className=`alert-bar ${type}`;bar.textContent=msg;
+  if(type==='success')setTimeout(()=>bar.classList.add('hidden'),4000);
+}
+</script>
+</body>
 </html>
