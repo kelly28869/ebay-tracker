@@ -569,6 +569,143 @@ async function scrapeCarrierStatus(carrier, trackingNumber) {
 
   return { status, delivered, deliveryDate, url, carrier, trackingNumber };
 }
+// ── Check if we already messaged a seller (GetMemberMessages) ────────────────
+
+async function checkIfMessagedSeller(sellerIds, daysBack = 30) {
+  // sellerIds can be a single string or array
+  const sellers = Array.isArray(sellerIds) ? sellerIds : [sellerIds];
+  const sellersLower = sellers.map(s => s.toLowerCase());
+  const results = {};
+  sellers.forEach(s => { results[s] = { messaged: false, messages: [] }; });
+
+  const endTime = new Date().toISOString();
+  const startTime = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages) {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetMemberMessagesRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials><eBayAuthToken>${EBAY_USER_TOKEN}</eBayAuthToken></RequesterCredentials>
+  <MailMessageType>All</MailMessageType>
+  <StartCreationTime>${startTime}</StartCreationTime>
+  <EndCreationTime>${endTime}</EndCreationTime>
+  <Pagination>
+    <EntriesPerPage>100</EntriesPerPage>
+    <PageNumber>${page}</PageNumber>
+  </Pagination>
+</GetMemberMessagesRequest>`;
+
+    try {
+      const result = await callEbayAPI('GetMemberMessages', xml);
+      const resp = result.GetMemberMessagesResponse;
+      if (!resp || (resp.Ack !== 'Success' && resp.Ack !== 'Warning')) {
+        const errors = resp && resp.Errors;
+        const msg = Array.isArray(errors)
+          ? errors.map(e => e.LongMessage || e.ShortMessage).join('; ')
+          : (errors && (errors.LongMessage || errors.ShortMessage)) || 'Unknown error';
+        console.error('GetMemberMessages error:', msg);
+        break;
+      }
+
+      // Get total pages
+      const pag = resp.PaginationResult;
+      if (pag && pag.TotalNumberOfPages) {
+        totalPages = parseInt(pag.TotalNumberOfPages, 10);
+      }
+
+      // Parse messages — structure varies, handle both shapes
+      const memberMsgs = resp.MemberMessage;
+      if (!memberMsgs) { page++; continue; }
+      const msgArray = Array.isArray(memberMsgs) ? memberMsgs : [memberMsgs];
+
+      for (const msg of msgArray) {
+        // Could be nested under MemberMessageExchange or directly on the node
+        const exchange = msg.MemberMessageExchange || msg;
+        const question = exchange.Question || exchange;
+
+        // Collect all possible recipient fields
+        const recipientId = question.RecipientID
+          || (exchange.RecipientID)
+          || (question.Recipient && question.Recipient.UserID);
+        const senderId = question.SenderID
+          || (question.Sender && question.Sender.UserID);
+        const body = question.Body || '';
+        const subject = question.Subject || '';
+        const creationDate = question.CreationDate || exchange.CreationDate || '';
+        const itemId = (question.Item && question.Item.ItemID)
+          || (exchange.Item && exchange.Item.ItemID) || '';
+
+        // Check if any of our target sellers match the recipient
+        const recipientLower = (recipientId || '').toLowerCase();
+        const senderLower = (senderId || '').toLowerCase();
+
+        for (let i = 0; i < sellersLower.length; i++) {
+          if (recipientLower === sellersLower[i] || senderLower === sellersLower[i]) {
+            results[sellers[i]].messaged = true;
+            results[sellers[i]].messages.push({
+              sender: senderId || null,
+              recipient: recipientId || null,
+              subject: subject || null,
+              bodyPreview: typeof body === 'string' ? body.slice(0, 150) : null,
+              date: creationDate || null,
+              itemId: itemId || null,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('GetMemberMessages page', page, 'error:', err.message);
+      break;
+    }
+
+    page++;
+    // Safety cap — don't go beyond 10 pages
+    if (page > 10) break;
+  }
+
+  return results;
+}
+
+// Single seller check
+app.get('/api/check-message', async (req, res) => {
+  const { sellerId, daysBack } = req.query;
+  if (!sellerId) return res.status(400).json({ error: 'sellerId required' });
+  if (!EBAY_USER_TOKEN) return res.status(401).json({ error: 'EBAY_USER_TOKEN not configured' });
+
+  try {
+    const results = await checkIfMessagedSeller(sellerId, parseInt(daysBack || '30', 10));
+    const result = results[sellerId];
+    res.json({
+      sellerId,
+      messaged: result.messaged,
+      messageCount: result.messages.length,
+      messages: result.messages,
+    });
+  } catch (err) {
+    console.error('check-message error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk check — POST body: { sellerIds: ["seller1","seller2",...], daysBack: 30 }
+app.post('/api/check-messages', async (req, res) => {
+  const { sellerIds, daysBack } = req.body;
+  if (!sellerIds || !Array.isArray(sellerIds) || sellerIds.length === 0) {
+    return res.status(400).json({ error: 'sellerIds array required' });
+  }
+  if (!EBAY_USER_TOKEN) return res.status(401).json({ error: 'EBAY_USER_TOKEN not configured' });
+
+  try {
+    const results = await checkIfMessagedSeller(sellerIds, parseInt(daysBack || '30', 10));
+    res.json(results);
+  } catch (err) {
+    console.error('check-messages error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {
